@@ -1,0 +1,28 @@
+{
+  "include": ["src", "."],
+  "exclude": ["**/__pycache__", ".venv", "**/node_modules"],
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.14",
+  
+  "typeCheckingMode": "basic",
+  "reportUnusedFunction": false,
+  "reportMissingImports": true,
+  
+  "reportGeneralTypeIssues": "warning",
+  "reportOptionalMemberAccess": "warning",
+  "reportAttributeAccessIssue": "warning",
+  "reportUnknownMemberType": "none",
+  "reportUnknownArgumentType": "none",
+  "reportUnknownVariableType": "none",
+
+  "executionEnvironments": [
+    {
+      "root": ".",
+      "pythonVersion": "3.14",
+      "pythonPlatform": "Darwin",
+      "extraPaths": [".venv/lib/python3.14/site-packages"]
+    }
+  ]
+}
+
