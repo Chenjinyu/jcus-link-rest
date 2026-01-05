@@ -80,7 +80,7 @@ class Settings(BaseSettings):
     # Rate Limiting
     rate_limit_enabled: bool = True
     rate_limit_requests: int = 100
-    rate_limit_period: int = 3600  # seconds
+    rate_limit_period: int = 24 * 60 * 60  # 24 hours
     
     # Logging
     log_level: str = "INFO"

@@ -6,10 +6,14 @@ from fastmcp import FastMCP
 
 from src.config.settings import settings
 from src.api.health import router as health_router
+from src.mcp.rate_limit import MCPRateLimitMiddleware
+from src.mcp.tools import register_tools
 
 
 def create_mcp() -> FastMCP:
-    return FastMCP(settings.app_name, version=settings.app_version)
+    mcp = FastMCP(settings.app_name, version=settings.app_version)
+    register_tools(mcp)
+    return mcp
 
 
 def create_app() -> FastAPI:
@@ -26,19 +30,14 @@ def create_app() -> FastAPI:
         allow_methods=settings.cors_allow_methods,
         allow_headers=settings.cors_allow_headers,
     )
+    app.add_middleware(MCPRateLimitMiddleware, path_prefix="/mcp")
 
-    app.include_router(health_router)
+    app.include_router(health_router, prefix="/api")
 
     mcp = create_mcp()
     app.state.mcp = mcp
 
-    mcp_app = getattr(mcp, "app", None)
-    if mcp_app is None and hasattr(mcp, "asgi_app"):
-        mcp_app = mcp.asgi_app()
-    if mcp_app is None:
-        mcp_app = mcp
-
-    app.mount("/mcp", mcp_app)
+    app.mount("/mcp", mcp.http_app(transport="streamable-http"))
 
     return app
 

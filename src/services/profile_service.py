@@ -1,0 +1,96 @@
+"""Profile data access and matching via Supabase-backed VectorDatabase."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from typing import Any, Iterable, Optional
+
+from src.config import settings
+from src.libs.vector_database import VectorDatabase
+
+
+def _stable_json(data: Any) -> str:
+    return json.dumps(data, sort_keys=True, default=str, ensure_ascii=True)
+
+
+class ProfileService:
+    """Service for fetching profile data and running vector search."""
+
+    def __init__(self) -> None:
+        if not settings.supabase_url or not settings.supabase_key:
+            raise ValueError("Supabase credentials are required")
+        self._db = VectorDatabase(
+            supabase_url=settings.supabase_url,
+            supabase_key=settings.supabase_key,
+            postgres_url=settings.supabase_postgres_url or "",
+            openai_key=settings.openai_api_key,
+            google_key=settings.google_api_key,
+        )
+
+    async def search_job_matches(
+        self,
+        job_description: str,
+        user_id: str,
+        top_k: int,
+        threshold: float,
+        model_name: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        return await self._db.search_rpc_function(
+            query=job_description,
+            user_id=user_id,
+            threshold=threshold,
+            limit=top_k,
+            model_name=model_name or settings.vector_search_model_name,
+        )
+
+    def get_profile_data_by_ids(self, profile_ids: Iterable[str]) -> list[dict[str, Any]]:
+        ids = [pid for pid in profile_ids if pid]
+        if not ids:
+            return []
+        result = (
+            self._db.supabase.table("profile_data")
+            .select("*")
+            .in_("id", ids)
+            .execute()
+        )
+        data = result.data or []
+        data.sort(
+            key=lambda item: (item.get("display_order") is None, item.get("display_order", 0))
+        )
+        return data
+
+    def get_resume_source(
+        self,
+        user_id: str,
+        profile_ids: Optional[list[str]] = None,
+    ) -> dict[str, Any]:
+        if profile_ids:
+            profile_data = self.get_profile_data_by_ids(profile_ids)
+        else:
+            profile_data = self._db.get_profile_data_list(user_id=user_id)
+        personal_attributes = self._db.get_personal_attributes(user_id=user_id)
+        return {
+            "user_id": user_id,
+            "profile_data": profile_data,
+            "personal_attributes": personal_attributes,
+        }
+
+    def fingerprint_resume_source(self, resume_source: dict[str, Any]) -> str:
+        payload = _stable_json(
+            {
+                "profile_data": resume_source.get("profile_data", []),
+                "personal_attributes": resume_source.get("personal_attributes", []),
+            }
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+_profile_service: Optional[ProfileService] = None
+
+
+def get_profile_service() -> ProfileService:
+    global _profile_service
+    if _profile_service is None:
+        _profile_service = ProfileService()
+    return _profile_service
