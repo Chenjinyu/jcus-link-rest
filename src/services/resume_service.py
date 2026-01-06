@@ -235,7 +235,7 @@ class ResumeService:
         match_summary = await self.summarize_matches(job_description, matches)
 
         profile_ids = [
-            match.get("profile_data_id")
+            str(match.get("profile_data_id"))
             for match in raw_matches
             if match.get("profile_data_id")
         ]

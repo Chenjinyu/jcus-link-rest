@@ -63,7 +63,7 @@ class ProfileService:
     def get_resume_source(
         self,
         user_id: str,
-        profile_ids: Optional[list[str]] = None,
+        profile_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         if profile_ids:
             profile_data = self.get_profile_data_by_ids(profile_ids)
