@@ -1,6 +1,22 @@
 # jcus-link-rest
 REST API with MCP
 
+
+## How to Run
+**Option 1**: Using the run script
+```sh
+uv run python run_server.py
+```
+**Option 2**: Using uvicorn directly
+```sh
+uv run uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+```
+**Option 3**: Using Python module syntax
+```sh
+uv run python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+
 ## MCP tool examples
 
 Below are example JSON-RPC payloads you can send to `/mcp` for the MCP tools.

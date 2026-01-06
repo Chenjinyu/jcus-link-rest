@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, List, Optional, AsyncIterator, cast
+from typing import Any, List, AsyncIterator, cast
 from collections.abc import AsyncGenerator
 
 from src.config import settings
@@ -47,7 +47,7 @@ class ResumeService:
 
     def __init__(self) -> None:
         self.llm_service = get_llm_service()
-        self.profile_service: Optional[ProfileService]
+        self.profile_service: ProfileService | None
         try:
             self.profile_service = get_profile_service()
         except Exception as exc:
@@ -60,7 +60,7 @@ class ResumeService:
             cache_path=settings.resume_cache_path,
         )
 
-    def _resolve_user_id(self, user_id: Optional[str]) -> str:
+    def _resolve_user_id(self, user_id: str | None) -> str:
         resolved = user_id or settings.author_user_id
         if not resolved:
             raise ValueError("user_id is required (set author_user_id or pass user_id)")
@@ -119,7 +119,7 @@ class ResumeService:
     async def search_matching_resumes(
         self,
         request: SearchMatchesRequest,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
     ) -> SearchMatchesResponse:
         """Search for resumes matching the job description"""
 
@@ -220,7 +220,7 @@ class ResumeService:
         self,
         job_description: str,
         top_k: int = 5,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
         use_cache: bool = True,
     ) -> dict[str, Any]:
         resolved_user_id = self._resolve_user_id(user_id)
@@ -302,7 +302,7 @@ class ResumeService:
 
     async def generate_latest_resume(
         self,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
         use_cache: bool = True,
     ) -> dict[str, Any]:
         resolved_user_id = self._resolve_user_id(user_id)
@@ -374,7 +374,7 @@ class ResumeService:
         }
 
 
-_resume_service: Optional[ResumeService] = None
+_resume_service: ResumeService | None = None
 
 
 def get_resume_service() -> ResumeService:

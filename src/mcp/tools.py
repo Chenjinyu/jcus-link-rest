@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from typing import Optional
 
 from fastmcp import FastMCP
 from fastmcp.server import Context
@@ -18,7 +17,7 @@ from src.libs.exceptions import FileUploadException
 logger = logging.getLogger(__name__)
 
 
-def _resolve_user_id(user_id: Optional[str]) -> str:
+def _resolve_user_id(user_id: str | None) -> str:
     resolved = user_id or settings.author_user_id
     if not resolved:
         raise ValueError("user_id is required (set author_user_id or pass user_id)")
@@ -28,7 +27,7 @@ def _resolve_user_id(user_id: Optional[str]) -> str:
 async def _extract_job_description(
     input_data: str,
     input_type: str,
-    filename: Optional[str],
+    filename: str | None,
 ) -> str:
     parser = get_document_parser()
 
@@ -61,18 +60,19 @@ def register_tools(mcp: FastMCP) -> None:
     async def list_matched_job_skills(
         input_data: str,
         input_type: str = "file",
-        filename: Optional[str] = None,
-        user_id: Optional[str] = None,
+        filename: str | None = None,
+        user_id: str | None = None,
         top_k: int = 10,
         threshold: float = settings.min_similarity_threshold,
-        model_name: Optional[str] = None,
-        ctx: Optional[Context] = None,
+        model_name: str | None = None,
+        ctx: Context | None = None,
     ) -> str:
         """
         Parse a job description file and return matched chunks with similarity rates.
         """
         try:
             if ctx:
+                # sends info message tied to the current MCP request and send to MCP client.
                 await ctx.info("Parsing job description for skill matching")
 
             job_description = await _extract_job_description(
@@ -143,9 +143,9 @@ def register_tools(mcp: FastMCP) -> None:
     async def generate_updated_resume(
         job_description: str,
         top_k: int = settings.default_top_k,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
         use_cache: bool = True,
-        ctx: Optional[Context] = None,
+        ctx: Context | None = None,
     ) -> str:
         """Generate an updated resume based on a job description."""
         try:
@@ -186,9 +186,9 @@ def register_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def download_latest_resume(
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
         use_cache: bool = True,
-        ctx: Optional[Context] = None,
+        ctx: Context | None = None,
     ) -> str:
         """Return the latest resume without a job description, using cache."""
         try:
@@ -222,7 +222,7 @@ def register_tools(mcp: FastMCP) -> None:
             )
 
     @mcp.tool()
-    async def resume_cache_status(ctx: Optional[Context] = None) -> str:
+    async def resume_cache_status(ctx: Context | None = None) -> str:
         """Return resume cache statistics for debugging/health checks."""
         try:
             if ctx:

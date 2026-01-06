@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable
 
 from src.config import settings
 from src.libs.vector_database import VectorDatabase
@@ -34,7 +34,7 @@ class ProfileService:
         user_id: str,
         top_k: int,
         threshold: float,
-        model_name: Optional[str] = None,
+        model_name: str | None = None,
     ) -> list[dict[str, Any]]:
         return await self._db.search_rpc_function(
             query=job_description,
@@ -86,7 +86,7 @@ class ProfileService:
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-_profile_service: Optional[ProfileService] = None
+_profile_service: ProfileService | None = None
 
 
 def get_profile_service() -> ProfileService:

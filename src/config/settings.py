@@ -12,7 +12,6 @@ OVERWRITE BY THE .ENV FILE.
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional
 from functools import lru_cache
 
 
@@ -20,7 +19,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables"""
     
     # Application
-    app_name: str = "resume-matching-mcp-server"
+    app_name: str = "jcus-link-rest"
     app_version: str = "1.0.0"
     debug: bool = False
     
@@ -40,21 +39,21 @@ class Settings(BaseSettings):
     
     # Vector Database - Primary: Supabase
     vector_db_type: str = "supabase"  # supabase, chromadb
-    supabase_url: Optional[str] = None
-    supabase_key: Optional[str] = None
-    supabase_postgres_url: Optional[str] = Field(
+    supabase_url: str | None = None
+    supabase_key: str | None = None
+    supabase_postgres_url: str | None = Field(
         default=None,
         validation_alias=AliasChoices("SUPABASE_POSTGRES_URL", "POSTGRES_URL_NON_POOLING"),
     )
-    postgres_user: Optional[str] = Field(
+    postgres_user: str | None = Field(
         default=None,
         validation_alias=AliasChoices("SUPABASE_POSTGRES_USER", "POSTGRES_USER"),
     )
     supabase_collection: str = "resumes"
     
     # Vector Database - Alternative: ChromaDB
-    chromadb_host: Optional[str] = None
-    chromadb_port: Optional[int] = None
+    chromadb_host: str | None = None
+    chromadb_port: int | None = None
     chromadb_collection: str = "resumes"
     
     # Embeddings
@@ -65,17 +64,17 @@ class Settings(BaseSettings):
     # LLM Service
     llm_provider: str = "anthropic"  # anthropic, openai
     llm_model: str = "claude-sonnet-4-20250514"
-    llm_api_key: Optional[str] = None
+    llm_api_key: str | None = None
     llm_max_tokens: int = 2000
     llm_temperature: float = 0.7
     
     # OpenAI (alternative)
-    openai_api_key: Optional[str] = None
+    openai_api_key: str | None = None
     openai_model: str = "gpt-4"
-    google_api_key: Optional[str] = None
+    google_api_key: str | None = None
 
     # Profile/Resume Data
-    author_user_id: Optional[str] = None
+    author_user_id: str | None = None
     
     # Rate Limiting
     rate_limit_enabled: bool = True

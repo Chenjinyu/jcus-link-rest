@@ -7,14 +7,15 @@ import json
 import os
 from collections import OrderedDict
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 def _utcnow() -> datetime:
-    return datetime.utcnow()
+    # Returns aware datetime (with tzinfo=timezone.utc)
+    return datetime.now(timezone.utc)
 
 
 @dataclass
@@ -23,11 +24,11 @@ class ResumeCacheEntry:
     resume_text: str
     summary: str
     match_rate: float
-    created_at: datetime
+    created_at: datetime 
     expires_at: datetime
     metadata: dict[str, Any]
 
-    def is_expired(self, now: Optional[datetime] = None) -> bool:
+    def is_expired(self, now: datetime | None = None) -> bool:
         return (now or _utcnow()) >= self.expires_at
 
 
@@ -38,7 +39,7 @@ class ResumeCache:
         self,
         max_entries: int = 200,
         ttl_seconds: int = 86400,
-        cache_path: Optional[str] = None,
+        cache_path: str | None = None,
     ) -> None:
         self._max_entries = max_entries
         self._ttl = timedelta(seconds=ttl_seconds)
@@ -53,7 +54,7 @@ class ResumeCache:
         payload = f"{job_description.strip()}|{profile_fingerprint}"
         return sha256(payload.encode("utf-8")).hexdigest()
 
-    async def get(self, key: str) -> Optional[ResumeCacheEntry]:
+    async def get(self, key: str) -> ResumeCacheEntry | None:
         async with self._lock:
             entry = self._entries.get(key)
             if not entry:
@@ -132,13 +133,13 @@ class ResumeCache:
         }
 
 
-_resume_cache: Optional[ResumeCache] = None
+_resume_cache: ResumeCache | None = None
 
 
 def get_resume_cache(
     max_entries: int,
     ttl_seconds: int,
-    cache_path: Optional[str],
+    cache_path: str | None,
 ) -> ResumeCache:
     global _resume_cache
     if _resume_cache is None:

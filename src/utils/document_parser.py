@@ -7,7 +7,7 @@ import logging
 import requests
 import validators
 from pathlib import Path
-from typing import Optional, Union
+from typing import Union
 from io import BytesIO
 
 # Document parsing libraries
@@ -27,7 +27,7 @@ class DocumentParser:
     @staticmethod
     async def parse(
         content: Union[bytes, str],
-        file_type: Optional[str] = None,
+        file_type: str | None = None,
         is_url: bool = False
     ) -> str:
         """
@@ -268,7 +268,7 @@ class DocumentParser:
 
 
 # Singleton instance
-_document_parser: Optional[DocumentParser] = None
+_document_parser: DocumentParser | None = None
 
 
 def get_document_parser() -> DocumentParser:

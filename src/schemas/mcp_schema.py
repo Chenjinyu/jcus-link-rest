@@ -4,7 +4,7 @@ MCP Protocol models and types (Pydantic models)
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional, Any, Dict, List
+from typing import Any, Dict, List
 from enum import Enum
 
 
@@ -31,22 +31,22 @@ class MCPRequest(BaseModel):
     jsonrpc: str = "2.0"
     id: int
     method: str
-    params: Optional[Dict[str, Any]] = None
+    params: Dict[str, Any] | None = None
 
 
 class MCPError(BaseModel):
     """MCP error object"""
     code: int
     message: str
-    data: Optional[Any] = None
+    data: Any | None = None
 
 
 class MCPResponse(BaseModel):
     """MCP response message"""
     jsonrpc: str = "2.0"
     id: int
-    result: Optional[Dict[str, Any]] = None
-    error: Optional[MCPError] = None
+    result: Dict[str, Any] | None = None
+    error: MCPError | None = None
 
 
 class ToolInput(BaseModel):
@@ -90,9 +90,9 @@ class ServerInfo(BaseModel):
 
 class ServerCapabilities(BaseModel):
     """Server capabilities"""
-    tools: Optional[Dict[str, Any]] = Field(default_factory=dict)
-    resources: Optional[Dict[str, Any]] = None
-    prompts: Optional[Dict[str, Any]] = None
+    tools: Dict[str, Any] | None = Field(default_factory=dict)
+    resources: Dict[str, Any] | None = None
+    prompts: Dict[str, Any] | None = None
 
 
 class InitializeResult(BaseModel):

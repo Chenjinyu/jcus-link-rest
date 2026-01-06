@@ -2,7 +2,7 @@
 import json
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Union
 
 import asyncpg
 from asyncpg.pool import PoolConnectionProxy
@@ -11,7 +11,7 @@ import openai
 from supabase import Client, create_client
 
 try:
-    import google as genai
+    import google.generativeai as genai
     GOOGLE_AVAILABLE = True
 except ImportError:
     GOOGLE_AVAILABLE = False
@@ -42,15 +42,15 @@ class VectorDatabase:
         supabase_url: str,
         supabase_key: str,
         postgres_url: str,
-        openai_key: Optional[str] = None,
-        google_key: Optional[str] = None,
+        openai_key: str | None = None,
+        google_key: str | None = None,
         ollama_url: str = "http://localhost:11434",
     ):
         self.supabase: Client = create_client(supabase_url, supabase_key)
 
         # PostgreSQL connection pool for transactions
         self.postgres_url = postgres_url
-        self.pg_pool: Optional[asyncpg.Pool] = None
+        self.pg_pool: asyncpg.Pool | None = None
 
         # Initialize AI providers
         self.openai_client = openai.OpenAI(api_key=openai_key) if openai_key else None
@@ -120,7 +120,7 @@ class VectorDatabase:
                 "You may need to run the SQL migration manually: db_migration/supabase/fix_profile_data_trigger.sql"
             )
 
-    def _parse_date(self, date_value: Optional[Union[str, date]]) -> Optional[date]:
+    def _parse_date(self, date_value: Union[str, date] | None) -> date | None:
         """
         Convert string date to Python date object for asyncpg.
 
@@ -211,7 +211,7 @@ class VectorDatabase:
             except (TypeError, ValueError):
                 return default
 
-        def _safe_float(value: Any) -> Optional[float]:
+        def _safe_float(value: Any) -> float | None:
             if value is None:
                 return None
             try:
@@ -428,10 +428,10 @@ class VectorDatabase:
     async def update_document(
         self,
         document_id: str,
-        title: Optional[str] = None,
-        content: Optional[str] = None,
-        metadata: Optional[dict[str, Any]] = None,
-        tags: Optional[List[str]] = None,
+        title: str | None = None,
+        content: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        tags: List[str] | None = None,
         recreate_embeddings: bool = True,
         chunk_size: int = 500,
         chunk_overlap: int = 50,
@@ -518,7 +518,7 @@ class VectorDatabase:
 
         return True
 
-    def get_document(self, document_id: str) -> Optional[dict[str, Any]]:
+    def get_document(self, document_id: str) -> dict[str, Any] | None:
         """Get document by ID"""
         result = (
             self.supabase.table("documents").select("*").eq("id", document_id).execute()
@@ -534,7 +534,7 @@ class VectorDatabase:
     def get_documents(
         self,
         user_id: str,
-        tags: Optional[List[str]] = None,
+        tags: List[str] | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> List[dict[str, Any]]:
@@ -570,7 +570,7 @@ class VectorDatabase:
         metadata: dict[str, Any] | None = None,
         tags: List[str] | None = None,
         model_name: str = "nomic-embed-text-768",
-        chunks: Optional[list[dict[str, Any]]] = None,
+        chunks: list[dict[str, Any]] | None = None,
     ) -> str:
         """
         Call SQL function to upsert document with embeddings.
@@ -603,14 +603,14 @@ class VectorDatabase:
         user_id: str,
         title: str,
         content: str,
-        subtitle: Optional[str] = None,
-        excerpt: Optional[str] = None,
+        subtitle: str | None = None,
+        excerpt: str | None = None,
         tags: List[str] | None = None,
-        category: Optional[str] = None,
+        category: str | None = None,
         status: str = "draft",
-        seo_title: Optional[str] = None,
-        seo_description: Optional[str] = None,
-        og_image: Optional[str] = None,
+        seo_title: str | None = None,
+        seo_description: str | None = None,
+        og_image: str | None = None,
         model_names: List[str] | None = None,
         chunk_size: int = 500,
         chunk_overlap: int = 50,
@@ -679,16 +679,16 @@ class VectorDatabase:
     async def update_article(
         self,
         article_id: str,
-        title: Optional[str] = None,
-        content: Optional[str] = None,
-        subtitle: Optional[str] = None,
-        excerpt: Optional[str] = None,
-        tags: Optional[List[str]] = None,
-        category: Optional[str] = None,
-        status: Optional[str] = None,
-        seo_title: Optional[str] = None,
-        seo_description: Optional[str] = None,
-        og_image: Optional[str] = None,
+        title: str | None = None,
+        content: str | None = None,
+        subtitle: str | None = None,
+        excerpt: str | None = None,
+        tags: List[str] | None = None,
+        category: str | None = None,
+        status: str | None = None,
+        seo_title: str | None = None,
+        seo_description: str | None = None,
+        og_image: str | None = None,
         recreate_embeddings: bool = True,
         chunk_size: int = 500,
         chunk_overlap: int = 50,
@@ -851,7 +851,7 @@ class VectorDatabase:
 
         return True
 
-    def get_article(self, article_id: str) -> Optional[dict[str, Any]]:
+    def get_article(self, article_id: str) -> dict[str, Any] | None:
         """Get article by ID"""
         result = (
             self.supabase.table("articles").select("*").eq("id", article_id).execute()
@@ -862,7 +862,7 @@ class VectorDatabase:
         first = data[0]
         return first if isinstance(first, dict) else None
 
-    def get_article_by_slug(self, slug: str) -> Optional[dict[str, Any]]:
+    def get_article_by_slug(self, slug: str) -> dict[str, Any] | None:
         """Get article by slug"""
         result = self.supabase.table("articles").select("*").eq("slug", slug).execute()
         data = result.data
@@ -874,9 +874,9 @@ class VectorDatabase:
     def get_articles(
         self,
         user_id: str,
-        status: Optional[str] = None,
-        category: Optional[str] = None,
-        tags: Optional[List[str]] = None,
+        status: str | None = None,
+        category: str | None = None,
+        tags: List[str] | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> List[dict[str, Any]]:
@@ -941,11 +941,11 @@ class VectorDatabase:
         ],
         data: dict[str, Any],
         searchable: bool = True,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
         is_current: bool = False,
         is_featured: bool = False,
-        display_order: Optional[int] = None,
+        display_order: int | None = None,
         model_names: List[str] | None = None,
         chunk_size: int = 500,
         chunk_overlap: int = 50,
@@ -1034,12 +1034,12 @@ class VectorDatabase:
     async def update_profile_data(
         self,
         profile_id: str,
-        data: Optional[dict[str, Any]] = None,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        is_current: Optional[bool] = None,
-        is_featured: Optional[bool] = None,
-        display_order: Optional[int] = None,
+        data: dict[str, Any] | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        is_current: bool | None = None,
+        is_featured: bool | None = None,
+        display_order: int | None = None,
         recreate_embeddings: bool = True,
         chunk_size: int = 500,
         chunk_overlap: int = 50,
@@ -1181,7 +1181,7 @@ class VectorDatabase:
 
         return True
 
-    def get_profile_data(self, profile_id: str) -> Optional[dict[str, Any]]:
+    def get_profile_data(self, profile_id: str) -> dict[str, Any] | None:
         """Get profile data by ID"""
         result = (
             self.supabase.table("profile_data")
@@ -1198,9 +1198,9 @@ class VectorDatabase:
     def get_profile_data_list(
         self,
         user_id: str,
-        category: Optional[str] = None,
-        is_current: Optional[bool] = None,
-        is_featured: Optional[bool] = None,
+        category: str | None = None,
+        is_current: bool | None = None,
+        is_featured: bool | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> List[dict[str, Any]]:
@@ -1239,8 +1239,8 @@ class VectorDatabase:
         title: str,
         description: str,
         examples: List[str] | None = None,
-        importance_score: Optional[int] = None,
-        confidence_level: Optional[int] = None,
+        importance_score: int | None = None,
+        confidence_level: int | None = None,
         related_articles: List[str] | None = None,
         related_experiences: List[str] | None = None,
         searchable: bool = True,
@@ -1339,8 +1339,8 @@ class VectorDatabase:
         title: str,
         description: str,
         examples: List[str] | None = None,
-        importance_score: Optional[int] = None,
-        confidence_level: Optional[int] = None,
+        importance_score: int | None = None,
+        confidence_level: int | None = None,
         related_articles: List[str] | None = None,
         related_experiences: List[str] | None = None,
         model_name: str = "nomic-embed-text-768",
@@ -1376,13 +1376,13 @@ class VectorDatabase:
     def update_personal_attribute_rpc_function(
         self,
         attribute_id: str,
-        title: Optional[str] = None,
-        description: Optional[str] = None,
-        examples: Optional[List[str]] = None,
-        importance_score: Optional[int] = None,
-        confidence_level: Optional[int] = None,
-        related_articles: Optional[List[str]] = None,
-        related_experiences: Optional[List[str]] = None,
+        title: str | None = None,
+        description: str | None = None,
+        examples: List[str] | None = None,
+        importance_score: int | None = None,
+        confidence_level: int | None = None,
+        related_articles: List[str] | None = None,
+        related_experiences: List[str] | None = None,
         recreate_embedding: bool = True,
     ) -> bool:
         """
@@ -1409,13 +1409,13 @@ class VectorDatabase:
     async def update_personal_attribute(
         self,
         attribute_id: str,
-        title: Optional[str] = None,
-        description: Optional[str] = None,
-        examples: Optional[List[str]] = None,
-        importance_score: Optional[int] = None,
-        confidence_level: Optional[int] = None,
-        related_articles: Optional[List[str]] = None,
-        related_experiences: Optional[List[str]] = None,
+        title: str | None = None,
+        description: str | None = None,
+        examples: List[str] | None = None,
+        importance_score: int | None = None,
+        confidence_level: int | None = None,
+        related_articles: List[str] | None = None,
+        related_experiences: List[str] | None = None,
         recreate_embeddings: bool = True,
         chunk_size: int = 500,
         chunk_overlap: int = 50,
@@ -1560,7 +1560,7 @@ class VectorDatabase:
 
         return True
 
-    def get_personal_attribute(self, attribute_id: str) -> Optional[dict[str, Any]]:
+    def get_personal_attribute(self, attribute_id: str) -> dict[str, Any] | None:
         """Get personal attribute by ID"""
         result = (
             self.supabase.table("personal_attributes")
@@ -1577,8 +1577,8 @@ class VectorDatabase:
     def get_personal_attributes(
         self,
         user_id: str,
-        attribute_type: Optional[str] = None,
-        min_importance: Optional[int] = None,
+        attribute_type: str | None = None,
+        min_importance: int | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> List[dict[str, Any]]:
@@ -1614,8 +1614,8 @@ class VectorDatabase:
         self,
         query: str,
         user_id: str,
-        content_types: Optional[List[str]] = None,
-        tags: Optional[List[str]] = None,
+        content_types: List[str] | None = None,
+        tags: List[str] | None = None,
         threshold: float = 0.7,
         limit: int = 10,
         model_name: str = "nomic-embed-text-768",
@@ -1699,7 +1699,7 @@ class VectorDatabase:
         user_id: str,
         update_description: str,
         new_content: str,
-        content_type: Optional[str] = None,
+        content_type: str | None = None,
         similarity_threshold: float = 0.85,
         model_name: str = "nomic-embed-text-768",
     ) -> dict[str, Any]:
@@ -1830,9 +1830,9 @@ class VectorDatabase:
         self,
         document_id: str,
         new_content: str,
-        article_id: Optional[str] = None,
-        profile_data_id: Optional[str] = None,
-        personal_attribute_id: Optional[str] = None,
+        article_id: str | None = None,
+        profile_data_id: str | None = None,
+        personal_attribute_id: str | None = None,
     ) -> bool:
         """Apply a confirmed update after user approval"""
 

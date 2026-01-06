@@ -5,7 +5,7 @@ LLM Service for resume generation and text processing
 import asyncio
 import json
 import logging
-from typing import AsyncIterator, List, Optional, AsyncGenerator, Any
+from typing import AsyncIterator, List, AsyncGenerator, Any
 from abc import ABC, abstractmethod
 
 from src.config import settings
@@ -415,7 +415,7 @@ class LLMServiceFactory:
         raise ValueError(f"Unsupported LLM provider: {provider}")
 
 
-_llm_service: Optional[BaseLLMService] = None
+_llm_service: BaseLLMService | None = None
 
 
 def get_llm_service() -> BaseLLMService:

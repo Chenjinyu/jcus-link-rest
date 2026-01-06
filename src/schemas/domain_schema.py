@@ -4,7 +4,7 @@ Domain-specific data schema with Pydantic models
 """
 
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List
 from datetime import datetime
 
 
@@ -63,7 +63,7 @@ class ResumeData(BaseModel):
     content: str
     skills: List[str]
     experience_years: int
-    education: Optional[str] = None
+    education: str | None = None
     certifications: List[str] = Field(default_factory=list)
-    embedding: Optional[List[float]] = None
+    embedding: List[float] | None = None
     metadata: dict = Field(default_factory=dict)
