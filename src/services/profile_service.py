@@ -17,15 +17,26 @@ def _stable_json(data: Any) -> str:
 class ProfileService:
     """Service for fetching profile data and running vector search."""
 
-    def __init__(self) -> None:
+    def __init__(self, provider_name: str = "openai") -> None:
         if not settings.supabase_url or not settings.supabase_key:
             raise ValueError("Supabase credentials are required")
+
+        # Determine provider key from settings
+        if provider_name == "openai":
+            provider_key = settings.openai_api_key
+        elif provider_name == "google":
+            provider_key = settings.google_api_key
+        elif provider_name == "ollama":
+            provider_key = None  # Ollama doesn't need an API key
+        else:
+            raise ValueError(f"Unsupported provider: {provider_name}. Must be one of: openai, google, ollama")
+
         self._db = VectorDatabase(
             supabase_url=settings.supabase_url,
             supabase_key=settings.supabase_key,
             postgres_url=settings.supabase_postgres_url or "",
-            openai_key=settings.openai_api_key,
-            google_key=settings.google_api_key,
+            provider_name=provider_name,
+            provider_key=provider_key,
         )
 
     async def search_job_matches(
@@ -44,7 +55,7 @@ class ProfileService:
             model_name=model_name or settings.vector_search_model_name,
         )
 
-    def get_profile_data_by_ids(self, profile_ids: Iterable[str]) -> list[dict[str, Any]]:
+    def get_profile_data_by_ids(self, profile_ids: Iterable[str]) -> list[dict[str, Any] | Any]:
         ids = [pid for pid in profile_ids if pid]
         if not ids:
             return []
@@ -55,8 +66,9 @@ class ProfileService:
             .execute()
         )
         data = result.data or []
+        # sort empty display_order to the end
         data.sort(
-            key=lambda item: (item.get("display_order") is None, item.get("display_order", 0))
+            key=lambda item: (item.get("display_order") is None, item.get("display_order", 0)) # type: ignore
         )
         return data
 

@@ -10,7 +10,7 @@ from fastmcp import FastMCP
 from fastmcp.server import Context
 
 from src.config import settings
-from src.utils.document_parser import get_document_parser
+from src.libs.document_parser import get_document_parser
 from src.services import get_resume_service, get_profile_service
 from src.libs.exceptions import FileUploadException
 

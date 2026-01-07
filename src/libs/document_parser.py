@@ -1,4 +1,4 @@
-# src/utils/document_parser.py
+# src/libs/document_parser.py
 """
 Document parser for various file formats (PDF, DOCX, HTML, TXT, URL)
 """
@@ -279,3 +279,4 @@ def get_document_parser() -> DocumentParser:
         _document_parser = DocumentParser()
     
     return _document_parser
+

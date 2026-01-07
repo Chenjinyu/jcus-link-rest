@@ -42,8 +42,8 @@ class VectorDatabase:
         supabase_url: str,
         supabase_key: str,
         postgres_url: str,
-        openai_key: str | None = None,
-        google_key: str | None = None,
+        provider_name: Literal["openai", "google", "ollama"],
+        provider_key: str | None = None,
         ollama_url: str = "http://localhost:11434",
     ):
         self.supabase: Client = create_client(supabase_url, supabase_key)
@@ -52,19 +52,39 @@ class VectorDatabase:
         self.postgres_url = postgres_url
         self.pg_pool: asyncpg.Pool | None = None
 
-        # Initialize AI providers
-        self.openai_client = openai.OpenAI(api_key=openai_key) if openai_key else None
+        # Store provider name
+        self.provider_name = provider_name.lower()
+        if self.provider_name not in ["openai", "google", "ollama"]:
+            raise ValueError(
+                f"Unsupported provider: {provider_name}. Must be one of: openai, google, ollama"
+            )
+
+        # Initialize AI providers based on provider_name
+        self.openai_client = None
+        self.google_client = None
         self.ollama_url = ollama_url
 
-        if google_key and GOOGLE_AVAILABLE:
-            genai.configure(api_key=google_key)
+        if self.provider_name == "openai":
+            if not provider_key:
+                raise ValueError("provider_key is required for OpenAI provider")
+            self.openai_client = openai.OpenAI(api_key=provider_key)
+        elif self.provider_name == "google":
+            if not provider_key:
+                raise ValueError("provider_key is required for Google provider")
+            if not GOOGLE_AVAILABLE:
+                raise ImportError("google.generativeai is not available")
+            genai.configure(api_key=provider_key)
             self.google_client = genai
-        else:
-            self.google_client = None
+        elif self.provider_name == "ollama":
+            # Ollama is local, no API key needed
+            pass
 
         self._models_cache: dict[str, EmbeddingModel] = {}
         self._models_by_id: dict[str, EmbeddingModel] = {}
         self._load_models()
+
+        # Set model_name based on provider from available models
+        self.model_name = self._get_default_model_for_provider()
 
     async def init_pool(self):
         """Initialize PostgreSQL connection pool. Call this before using transaction methods."""
@@ -146,6 +166,7 @@ class VectorDatabase:
                     raise ValueError(
                         f"Invalid date format: {date_value}. Expected 'YYYY-MM-DD' or 'YYYY/MM/DD'"
                     )
+                    
         raise TypeError(
             f"date_value must be str, date, or None, got {type(date_value)}"
         )
@@ -202,6 +223,21 @@ class VectorDatabase:
                 text_parts.append(str(data[key]))
 
         return ". ".join(text_parts) if text_parts else ""
+
+    def _get_default_model_for_provider(self) -> str:
+        """Get default model name for the current provider"""
+        # Find first available model for this provider
+        for model_name, model in self._models_cache.items():
+            if model.provider == self.provider_name:
+                return model_name
+
+        # Fallback to default model names if not found in cache
+        defaults = {
+            "openai": "text-embedding-3-small",
+            "google": "text-embedding-004",
+            "ollama": "nomic-embed-text",
+        }
+        return defaults.get(self.provider_name, "nomic-embed-text-768")
 
     def _load_models(self) -> None:
         """Load embedding models from database and set availability based on client initialization"""
@@ -262,12 +298,16 @@ class VectorDatabase:
     # ========================================================================
 
     async def create_embedding(
-        self, text: str, model_name: str = "nomic-embed-text-768"
+        self, text: str, model_name: str | None = None
     ) -> List[float]:
         """
         Create embedding using specified model.
         Supports: OpenAI, Ollama, Google Gemini
         """
+        # Use instance model_name if not provided
+        if model_name is None:
+            model_name = self.model_name
+
         model = self._models_cache.get(model_name)
         if not model:
             raise ValueError(f"Model {model_name} not found or not active")
@@ -569,7 +609,7 @@ class VectorDatabase:
         content: str,
         metadata: dict[str, Any] | None = None,
         tags: List[str] | None = None,
-        model_name: str = "nomic-embed-text-768",
+        model_name: str | None = None,
         chunks: list[dict[str, Any]] | None = None,
     ) -> str:
         """
@@ -578,6 +618,10 @@ class VectorDatabase:
         Args:
             chunks: List of dicts with 'text', 'embedding', 'chunk_index'
         """
+        # Use instance model_name if not provided
+        if model_name is None:
+            model_name = self.model_name
+
         chunks_json = chunks or []
 
         result = self.supabase.rpc(
@@ -1343,13 +1387,17 @@ class VectorDatabase:
         confidence_level: int | None = None,
         related_articles: List[str] | None = None,
         related_experiences: List[str] | None = None,
-        model_name: str = "nomic-embed-text-768",
+        model_name: str | None = None,
         create_searchable: bool = True,
     ) -> str:
         """
         Call SQL function to add personal attribute.
         Returns attribute_id.
         """
+        # Use instance model_name if not provided
+        if model_name is None:
+            model_name = self.model_name
+
         result = self.supabase.rpc(
             "add_personal_attribute",
             {
@@ -1618,7 +1666,7 @@ class VectorDatabase:
         tags: List[str] | None = None,
         threshold: float = 0.7,
         limit: int = 10,
-        model_name: str = "nomic-embed-text-768",
+        model_name: str | None = None,
     ) -> List[dict[str, Any]]:
         """
         Search across all content using vector similarity.
@@ -1635,6 +1683,10 @@ class VectorDatabase:
         Note: Uses Supabase client (single operation) - no transaction needed.
         For multi-operation atomicity, use asyncpg pool with transactions.
         """
+        # Use instance model_name if not provided
+        if model_name is None:
+            model_name = self.model_name
+
         query_embedding = await self.create_embedding(query, model_name)
 
         model = self._models_cache.get(model_name)
@@ -1667,12 +1719,16 @@ class VectorDatabase:
         user_id: str,
         threshold: float = 0.7,
         limit: int = 10,
-        model_name: str = "nomic-embed-text-768",
+        model_name: str | None = None,
     ) -> List[dict[str, Any]]:
         """
         Simplified search across all content.
         Uses the search_similar_content SQL function.
         """
+        # Use instance model_name if not provided
+        if model_name is None:
+            model_name = self.model_name
+
         query_embedding = await self.create_embedding(query, model_name)
 
         results = self.supabase.rpc(
@@ -1701,9 +1757,13 @@ class VectorDatabase:
         new_content: str,
         content_type: str | None = None,
         similarity_threshold: float = 0.85,
-        model_name: str = "nomic-embed-text-768",
+        model_name: str | None = None,
     ) -> dict[str, Any]:
         """Intelligently find and update documents based on semantic similarity"""
+        # Use instance model_name if not provided
+        if model_name is None:
+            model_name = self.model_name
+
         matches = await self.search_rpc_function(
             query=update_description,
             user_id=user_id,
@@ -1798,9 +1858,13 @@ class VectorDatabase:
         self,
         user_id: str,
         update_request: str,
-        model_name: str = "nomic-embed-text-768",
+        model_name: str | None = None,
     ) -> List[dict[str, Any]]:
         """Find potential updates but don't apply them yet"""
+        # Use instance model_name if not provided
+        if model_name is None:
+            model_name = self.model_name
+
         matches = await self.search_rpc_function(
             query=update_request,
             user_id=user_id,

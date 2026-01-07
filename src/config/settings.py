@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     app_name: str = "jcus-link-rest"
     app_version: str = "1.0.0"
     debug: bool = False
+    # Profile/Resume Data
+    author_user_id: str | None = "jinyu.chen"
     
     # Server
     host: str = "0.0.0.0"
@@ -49,8 +51,6 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("SUPABASE_POSTGRES_USER", "POSTGRES_USER"),
     )
-    supabase_collection: str = "resumes"
-    
     # Vector Database - Alternative: ChromaDB
     chromadb_host: str | None = None
     chromadb_port: int | None = None
@@ -62,19 +62,15 @@ class Settings(BaseSettings):
     vector_search_model_name: str = "all-MiniLM-L6-v2"
     
     # LLM Service
-    llm_provider: str = "anthropic"  # anthropic, openai
-    llm_model: str = "claude-sonnet-4-20250514"
-    llm_api_key: str | None = None
-    llm_max_tokens: int = 2000
-    llm_temperature: float = 0.7
+    llm_provider: str = "openai"  # openai, google
     
-    # OpenAI (alternative)
+    # OpenAI Provider
     openai_api_key: str | None = None
-    openai_model: str = "gpt-4"
+    openai_model: str = "gpt-4o"  # Default OpenAI model
+    
+    # Google Provider
     google_api_key: str | None = None
-
-    # Profile/Resume Data
-    author_user_id: str | None = None
+    google_model: str = "gemini-1.5-pro"  # Default Google model
     
     # Rate Limiting
     rate_limit_enabled: bool = True

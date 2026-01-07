@@ -155,17 +155,17 @@ class BaseLLMService(ABC):
         raise NotImplementedError
 
 
-class AnthropicLLMService(BaseLLMService):
-    """Anthropic Claude LLM service implementation"""
+class GoogleLLMService(BaseLLMService):
+    """Google Gemini LLM service implementation"""
 
     def __init__(self):
-        self.api_key = settings.llm_api_key
-        self.model = settings.llm_model
-        self.max_tokens = settings.llm_max_tokens
-        self.temperature = settings.llm_temperature
+        self.api_key = settings.google_api_key
+        self.model = settings.google_model
+        self.max_tokens = 8192  # Default for Gemini models
+        self.temperature = 0.7  # Default temperature
 
         if not self.api_key:
-            logger.warning("Anthropic API key not set, using simulated responses")
+            logger.warning("Google API key not set, using simulated responses")
 
     async def generate_resume(
         self,
@@ -173,7 +173,7 @@ class AnthropicLLMService(BaseLLMService):
         matched_resumes: List[ResumeMatch],
         stream: bool = True,
     ) -> AsyncGenerator[str, None]:
-        """Generate optimized resume using Claude"""
+        """Generate optimized resume using Google Gemini"""
 
         try:
             prompt = self._build_resume_prompt(job_description, matched_resumes)
@@ -190,7 +190,7 @@ class AnthropicLLMService(BaseLLMService):
             raise LLMServiceException("resume generation", str(e))
 
     async def analyze_text(self, text: str) -> dict:
-        """Analyze job description using Claude"""
+        """Analyze job description using Google Gemini"""
 
         try:
             prompt = self._build_analysis_prompt(text)
@@ -367,6 +367,11 @@ class OpenAILLMService(BaseLLMService):
     def __init__(self):
         self.api_key = settings.openai_api_key
         self.model = settings.openai_model
+        self.max_tokens = 4000  # Default for OpenAI models
+        self.temperature = 0.7  # Default temperature
+
+        if not self.api_key:
+            logger.warning("OpenAI API key not set, using simulated responses")
 
     async def generate_resume(
         self,
@@ -375,12 +380,40 @@ class OpenAILLMService(BaseLLMService):
         stream: bool = True,
     ) -> AsyncGenerator[str, None]:
         """Generate resume using OpenAI"""
-        yield "OpenAI implementation"
+        try:
+            prompt = self._build_resume_prompt(job_description, matched_resumes)
+
+            if stream:
+                async for chunk in self._stream_generate(prompt):
+                    yield chunk
+            else:
+                result = await self._generate(prompt)
+                yield result
+
+        except Exception as e:
+            logger.error("Resume generation failed: %s", e)
+            raise LLMServiceException("resume generation", str(e))
 
     async def analyze_text(self, text: str) -> dict:
         """Analyze text using OpenAI"""
-        _ = text
-        return {}
+        try:
+            prompt = self._build_analysis_prompt(text)
+            _ = prompt
+
+            return {
+                "required_skills": ["Python", "FastAPI", "React", "AWS"],
+                "experience_level": "Senior",
+                "key_responsibilities": [
+                    "Design and implement scalable systems",
+                    "Lead technical projects",
+                    "Mentor junior developers",
+                ],
+                "estimated_match_threshold": 0.7,
+            }
+
+        except Exception as e:
+            logger.error("Text analysis failed: %s", e)
+            raise LLMServiceException("text analysis", str(e))
 
     async def generate_resume_from_source(
         self,
@@ -389,12 +422,143 @@ class OpenAILLMService(BaseLLMService):
         match_summary: dict[str, Any],
         stream: bool = True,
     ) -> AsyncGenerator[str, None]:
-        _ = job_description
-        _ = match_summary
-        if not self.api_key:
-            yield _render_resume_from_source(resume_source)
-            return
-        yield "OpenAI implementation"
+        try:
+            if not self.api_key:
+                yield _render_resume_from_source(resume_source)
+                return
+
+            prompt = self._build_resume_from_source_prompt(
+                job_description, resume_source, match_summary
+            )
+            if stream:
+                async for chunk in self._stream_generate(prompt):
+                    yield chunk
+            else:
+                result = await self._generate(prompt)
+                yield result
+        except Exception as e:
+            logger.error("Resume generation failed: %s", e)
+            raise LLMServiceException("resume generation", str(e))
+
+    def _build_resume_prompt(
+        self,
+        job_description: str,
+        matched_resumes: List[ResumeMatch],
+    ) -> str:
+        """Build prompt for resume generation"""
+        context = "Matched candidate profiles:\n\n"
+        for i, resume in enumerate(matched_resumes, 1):
+            context += f"{i}. Skills: {', '.join(resume.skills)}\n"
+            context += f"   Experience: {resume.experience_years} years\n"
+            context += f"   Match Score: {resume.similarity_score:.2f}\n\n"
+
+        return f"""Based on this job description and matched candidate profiles, generate an optimized resume.
+
+Job Description:
+{job_description}
+
+{context}
+
+Generate a professional resume that highlights relevant skills and experience for this role.
+Include:
+- Professional Summary
+- Key Skills
+- Work Experience (tailored to job requirements)
+- Education
+- Notable Achievements
+
+Format in clean, professional markdown.
+"""
+
+    def _build_analysis_prompt(self, text: str) -> str:
+        """Build prompt for job description analysis"""
+        return f"""Analyze this job description and extract key information:
+
+{text}
+
+Provide:
+1. Required skills (list)
+2. Experience level (Entry/Mid/Senior/Lead)
+3. Key responsibilities (list)
+4. Estimated match threshold (0.0-1.0)
+
+Format as JSON.
+"""
+
+    def _build_resume_from_source_prompt(
+        self,
+        job_description: str,
+        resume_source: dict[str, Any],
+        match_summary: dict[str, Any],
+    ) -> str:
+        resume_source_json = json.dumps(resume_source, ensure_ascii=True)
+        match_summary_json = json.dumps(match_summary, ensure_ascii=True)
+        return f"""You are updating the author's resume for a specific job description.
+
+Rules:
+- Use ONLY the facts present in Resume Source.
+- Do not invent dates, roles, companies, or skills not listed.
+- Prefer items most relevant to the job description and match summary.
+
+Job Description:
+{job_description}
+
+Match Summary:
+{match_summary_json}
+
+Resume Source (JSON):
+{resume_source_json}
+
+Return a professional resume in markdown with:
+- Professional Summary
+- Key Skills
+- Work Experience
+- Education
+- Certifications (if present)
+- Projects (if present)
+"""
+
+    async def _stream_generate(self, prompt: str) -> AsyncIterator[str]:
+        """Stream LLM response (simulated for now)"""
+        if self.api_key:
+            _ = prompt
+            pass
+
+        resume_parts = [
+            "# Professional Resume\n\n",
+            "## Professional Summary\n",
+            "Experienced software engineer with strong background in Python, TypeScript, and cloud technologies. ",
+            "Proven track record of building scalable applications and leading development teams.\n\n",
+            "## Key Skills\n",
+            "- **Programming Languages:** Python, TypeScript, JavaScript\n",
+            "- **Frameworks:** FastAPI, React, Node.js\n",
+            "- **Cloud Platforms:** AWS, GCP\n",
+            "- **Tools:** Docker, Kubernetes, Git\n\n",
+            "## Work Experience\n\n",
+            "### Senior Software Engineer | Tech Company\n",
+            "*2020 - Present*\n\n",
+            "- Developed microservices architecture serving 1M+ users\n",
+            "- Led team of 5 engineers in implementing CI/CD pipeline\n",
+            "- Reduced deployment time by 60% through automation\n\n",
+            "## Education\n",
+            "**Bachelor of Science in Computer Science**\n",
+            "University Name, 2018\n\n",
+            "## Achievements\n",
+            "- Architected system handling 10K requests/second\n",
+            "- Published 3 technical articles on Medium\n",
+            "- Contributed to 5+ open source projects\n",
+        ]
+
+        for part in resume_parts:
+            await asyncio.sleep(0.1)
+            yield part
+
+    async def _generate(self, prompt: str) -> str:
+        """Generate complete response"""
+        result = []
+        async for chunk in self._stream_generate(prompt):
+            result.append(chunk)
+        return "".join(result)
 
 
 class LLMServiceFactory:
@@ -406,13 +570,13 @@ class LLMServiceFactory:
 
         provider = settings.llm_provider.lower()
 
-        if provider == "anthropic":
-            logger.info("Using Anthropic LLM service")
-            return AnthropicLLMService()
         if provider == "openai":
-            logger.info("Using OpenAI LLM service")
+            logger.info("Using OpenAI LLM service with model: %s", settings.openai_model)
             return OpenAILLMService()
-        raise ValueError(f"Unsupported LLM provider: {provider}")
+        if provider == "google":
+            logger.info("Using Google LLM service with model: %s", settings.google_model)
+            return GoogleLLMService()
+        raise ValueError(f"Unsupported LLM provider: {provider}. Supported: openai, google")
 
 
 _llm_service: BaseLLMService | None = None
