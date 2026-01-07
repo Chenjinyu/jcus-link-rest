@@ -8,15 +8,8 @@ import asyncpg
 from asyncpg.pool import PoolConnectionProxy
 import httpx
 import openai
+from google import genai
 from supabase import Client, create_client
-
-try:
-    import google.generativeai as genai
-    GOOGLE_AVAILABLE = True
-except ImportError:
-    GOOGLE_AVAILABLE = False
-    genai = None
-
 
 @dataclass
 class EmbeddingModel:
@@ -71,10 +64,7 @@ class VectorDatabase:
         elif self.provider_name == "google":
             if not provider_key:
                 raise ValueError("provider_key is required for Google provider")
-            if not GOOGLE_AVAILABLE:
-                raise ImportError("google.generativeai is not available")
-            genai.configure(api_key=provider_key)
-            self.google_client = genai
+            self.google_client = genai.Client(api_key=provider_key)
         elif self.provider_name == "ollama":
             # Ollama is local, no API key needed
             pass
@@ -109,8 +99,13 @@ class VectorDatabase:
         """
         Fix profile_data trigger to not set searchable_text (column doesn't exist).
         This is a one-time fix that runs when pool is initialized.
+        Note: DDL statements (DROP, CREATE) don't require a transaction.
         """
+        if not self.pg_pool:
+            return  # Pool not initialized, skip trigger fix
+
         try:
+            # Acquire a connection from the pool (DDL statements auto-commit)
             async with self.pg_pool.acquire() as conn:
                 # Drop and recreate trigger function as no-op
                 await conn.execute("""
@@ -889,7 +884,7 @@ class VectorDatabase:
             .execute()
         )
         article_data = article.data if isinstance(article.data, dict) else None
-        document_id = article.data.get("document_id", "") if article_data else None
+        document_id = article.data.get("document_id", "") if article_data else None # type: ignore
         if document_id:
             self.delete_document(str(document_id), soft_delete=soft_delete)
 
@@ -1711,7 +1706,7 @@ class VectorDatabase:
         data = results.data
         if not data:
             return []
-        return [item for item in data if isinstance(item, dict)]
+        return [item for item in data if isinstance(item, dict)] # type: ignore
 
     async def search_all_similar_content_rpc_function(
         self,
@@ -1744,7 +1739,7 @@ class VectorDatabase:
         data = results.data
         if not data:
             return []
-        return [item for item in data if isinstance(item, dict)]
+        return [item for item in data if isinstance(item, dict)] # type: ignore
 
     # ========================================================================
     # SMART UPDATE OPERATIONS

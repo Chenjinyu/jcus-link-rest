@@ -3,13 +3,17 @@ LLM Service for resume generation and text processing
 """
 
 import asyncio
-import json
 import logging
 from typing import AsyncIterator, List, AsyncGenerator, Any
 from abc import ABC, abstractmethod
 
 from src.config import settings
 from src.libs.exceptions import LLMServiceException
+from src.mcp.prompts import (
+    build_analysis_prompt,
+    build_resume_from_source_prompt,
+    build_resume_prompt,
+)
 from src.schemas import ResumeMatch
 
 logger = logging.getLogger(__name__)
@@ -176,7 +180,7 @@ class GoogleLLMService(BaseLLMService):
         """Generate optimized resume using Google Gemini"""
 
         try:
-            prompt = self._build_resume_prompt(job_description, matched_resumes)
+            prompt = build_resume_prompt(job_description, matched_resumes)
 
             if stream:
                 async for chunk in self._stream_generate(prompt):
@@ -193,7 +197,7 @@ class GoogleLLMService(BaseLLMService):
         """Analyze job description using Google Gemini"""
 
         try:
-            prompt = self._build_analysis_prompt(text)
+            prompt = build_analysis_prompt(text)
             _ = prompt
 
             return {
@@ -223,8 +227,10 @@ class GoogleLLMService(BaseLLMService):
                 yield _render_resume_from_source(resume_source)
                 return
 
-            prompt = self._build_resume_from_source_prompt(
-                job_description, resume_source, match_summary
+            prompt = build_resume_from_source_prompt(
+                job_description,
+                resume_source,
+                match_summary,
             )
             if stream:
                 async for chunk in self._stream_generate(prompt):
@@ -235,86 +241,6 @@ class GoogleLLMService(BaseLLMService):
         except Exception as e:
             logger.error("Resume generation failed: %s", e)
             raise LLMServiceException("resume generation", str(e))
-
-    def _build_resume_prompt(
-        self,
-        job_description: str,
-        matched_resumes: List[ResumeMatch],
-    ) -> str:
-        """Build prompt for resume generation"""
-
-        context = "Matched candidate profiles:\n\n"
-        for i, resume in enumerate(matched_resumes, 1):
-            context += f"{i}. Skills: {', '.join(resume.skills)}\n"
-            context += f"   Experience: {resume.experience_years} years\n"
-            context += f"   Match Score: {resume.similarity_score:.2f}\n\n"
-
-        return f"""Based on this job description and matched candidate profiles, generate an optimized resume.
-
-Job Description:
-{job_description}
-
-{context}
-
-Generate a professional resume that highlights relevant skills and experience for this role.
-Include:
-- Professional Summary
-- Key Skills
-- Work Experience (tailored to job requirements)
-- Education
-- Notable Achievements
-
-Format in clean, professional markdown.
-"""
-
-    def _build_analysis_prompt(self, text: str) -> str:
-        """Build prompt for job description analysis"""
-
-        return f"""Analyze this job description and extract key information:
-
-{text}
-
-Provide:
-1. Required skills (list)
-2. Experience level (Entry/Mid/Senior/Lead)
-3. Key responsibilities (list)
-4. Estimated match threshold (0.0-1.0)
-
-Format as JSON.
-"""
-
-    def _build_resume_from_source_prompt(
-        self,
-        job_description: str,
-        resume_source: dict[str, Any],
-        match_summary: dict[str, Any],
-    ) -> str:
-        resume_source_json = json.dumps(resume_source, ensure_ascii=True)
-        match_summary_json = json.dumps(match_summary, ensure_ascii=True)
-        return f"""You are updating the author's resume for a specific job description.
-
-Rules:
-- Use ONLY the facts present in Resume Source.
-- Do not invent dates, roles, companies, or skills not listed.
-- Prefer items most relevant to the job description and match summary.
-
-Job Description:
-{job_description}
-
-Match Summary:
-{match_summary_json}
-
-Resume Source (JSON):
-{resume_source_json}
-
-Return a professional resume in markdown with:
-- Professional Summary
-- Key Skills
-- Work Experience
-- Education
-- Certifications (if present)
-- Projects (if present)
-"""
 
     async def _stream_generate(self, prompt: str) -> AsyncIterator[str]:
         """Stream LLM response (simulated for now)"""
@@ -381,7 +307,7 @@ class OpenAILLMService(BaseLLMService):
     ) -> AsyncGenerator[str, None]:
         """Generate resume using OpenAI"""
         try:
-            prompt = self._build_resume_prompt(job_description, matched_resumes)
+            prompt = build_resume_prompt(job_description, matched_resumes)
 
             if stream:
                 async for chunk in self._stream_generate(prompt):
@@ -397,7 +323,7 @@ class OpenAILLMService(BaseLLMService):
     async def analyze_text(self, text: str) -> dict:
         """Analyze text using OpenAI"""
         try:
-            prompt = self._build_analysis_prompt(text)
+            prompt = build_analysis_prompt(text)
             _ = prompt
 
             return {
@@ -427,8 +353,10 @@ class OpenAILLMService(BaseLLMService):
                 yield _render_resume_from_source(resume_source)
                 return
 
-            prompt = self._build_resume_from_source_prompt(
-                job_description, resume_source, match_summary
+            prompt = build_resume_from_source_prompt(
+                job_description,
+                resume_source,
+                match_summary,
             )
             if stream:
                 async for chunk in self._stream_generate(prompt):
@@ -439,84 +367,6 @@ class OpenAILLMService(BaseLLMService):
         except Exception as e:
             logger.error("Resume generation failed: %s", e)
             raise LLMServiceException("resume generation", str(e))
-
-    def _build_resume_prompt(
-        self,
-        job_description: str,
-        matched_resumes: List[ResumeMatch],
-    ) -> str:
-        """Build prompt for resume generation"""
-        context = "Matched candidate profiles:\n\n"
-        for i, resume in enumerate(matched_resumes, 1):
-            context += f"{i}. Skills: {', '.join(resume.skills)}\n"
-            context += f"   Experience: {resume.experience_years} years\n"
-            context += f"   Match Score: {resume.similarity_score:.2f}\n\n"
-
-        return f"""Based on this job description and matched candidate profiles, generate an optimized resume.
-
-Job Description:
-{job_description}
-
-{context}
-
-Generate a professional resume that highlights relevant skills and experience for this role.
-Include:
-- Professional Summary
-- Key Skills
-- Work Experience (tailored to job requirements)
-- Education
-- Notable Achievements
-
-Format in clean, professional markdown.
-"""
-
-    def _build_analysis_prompt(self, text: str) -> str:
-        """Build prompt for job description analysis"""
-        return f"""Analyze this job description and extract key information:
-
-{text}
-
-Provide:
-1. Required skills (list)
-2. Experience level (Entry/Mid/Senior/Lead)
-3. Key responsibilities (list)
-4. Estimated match threshold (0.0-1.0)
-
-Format as JSON.
-"""
-
-    def _build_resume_from_source_prompt(
-        self,
-        job_description: str,
-        resume_source: dict[str, Any],
-        match_summary: dict[str, Any],
-    ) -> str:
-        resume_source_json = json.dumps(resume_source, ensure_ascii=True)
-        match_summary_json = json.dumps(match_summary, ensure_ascii=True)
-        return f"""You are updating the author's resume for a specific job description.
-
-Rules:
-- Use ONLY the facts present in Resume Source.
-- Do not invent dates, roles, companies, or skills not listed.
-- Prefer items most relevant to the job description and match summary.
-
-Job Description:
-{job_description}
-
-Match Summary:
-{match_summary_json}
-
-Resume Source (JSON):
-{resume_source_json}
-
-Return a professional resume in markdown with:
-- Professional Summary
-- Key Skills
-- Work Experience
-- Education
-- Certifications (if present)
-- Projects (if present)
-"""
 
     async def _stream_generate(self, prompt: str) -> AsyncIterator[str]:
         """Stream LLM response (simulated for now)"""

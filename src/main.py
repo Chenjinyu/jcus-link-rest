@@ -7,12 +7,16 @@ from fastmcp import FastMCP
 from src.config.settings import settings
 from src.api.health import router as health_router
 from src.mcp.rate_limit import MCPRateLimitMiddleware
+from src.mcp.prompts import register_prompts
+from src.mcp.resources import register_resources
 from src.mcp.tools import register_tools
 
 
 def create_mcp() -> FastMCP:
     mcp = FastMCP(settings.app_name, version=settings.app_version)
     register_tools(mcp)
+    register_prompts(mcp)
+    register_resources(mcp)
     return mcp
 
 

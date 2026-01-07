@@ -11,7 +11,7 @@ from fastmcp.server import Context
 
 from src.config import settings
 from src.libs.document_parser import get_document_parser
-from src.services import get_resume_service, get_profile_service
+from src.services import get_profile_service, get_resume_service
 from src.libs.exceptions import FileUploadException
 
 logger = logging.getLogger(__name__)
