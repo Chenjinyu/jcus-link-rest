@@ -4,8 +4,9 @@ LLM Service for resume generation and text processing
 
 import asyncio
 import logging
-from typing import AsyncIterator, List, AsyncGenerator, Any
 from abc import ABC, abstractmethod
+from collections.abc import Callable # runtime behavior check
+from typing import Any, AsyncGenerator, AsyncIterator, List # static type hints
 
 from src.config import settings
 from src.libs.exceptions import LLMServiceException
@@ -130,7 +131,9 @@ def _render_resume_from_source(resume_source: dict[str, Any]) -> str:
 
 
 class BaseLLMService(ABC):
-    """Abstract base class for LLM services"""
+    """
+    Abstract base class for LLM services by following the dependency inversion principle,
+    depending on abstractions rather than concrete implementations."""
 
     @abstractmethod
     async def generate_resume(
@@ -157,6 +160,26 @@ class BaseLLMService(ABC):
     ) -> AsyncGenerator[str, None]:
         """Generate resume using structured source data"""
         raise NotImplementedError
+
+
+LLMServiceFactoryCallable = Callable[
+    [], # input args
+    BaseLLMService # return type
+]
+_LLM_SERVICE_REGISTRY: dict[str, LLMServiceFactoryCallable] = {}
+
+
+def register_llm_service(provider: str, factory: LLMServiceFactoryCallable) -> None:
+    """Register an LLM provider without modifying the factory implementation."""
+    key = provider.strip().lower()
+    if not key:
+        raise ValueError("LLM provider name cannot be empty")
+    _LLM_SERVICE_REGISTRY[key] = factory
+
+
+def available_llm_providers() -> list[str]:
+    """Return registered LLM provider names."""
+    return sorted(_LLM_SERVICE_REGISTRY.keys())
 
 
 class GoogleLLMService(BaseLLMService):
@@ -412,21 +435,24 @@ class OpenAILLMService(BaseLLMService):
 
 
 class LLMServiceFactory:
-    """Factory for creating LLM service instances"""
+    """Factory for creating LLM service instances using a provider registry."""
 
     @staticmethod
-    def create() -> BaseLLMService:
-        """Create LLM service based on configuration"""
+    def create(provider: str | None = None) -> BaseLLMService:
+        """Create LLM service based on configuration or explicit provider."""
+        provider_key = (provider or settings.llm_provider).strip().lower()
+        try:
+            factory = _LLM_SERVICE_REGISTRY[provider_key]
+        except KeyError as exc:
+            supported = ", ".join(available_llm_providers()) or "none"
+            raise ValueError(
+                f"Unsupported LLM provider: {provider_key}. Supported: {supported}"
+            ) from exc
+        return factory()
 
-        provider = settings.llm_provider.lower()
 
-        if provider == "openai":
-            logger.info("Using OpenAI LLM service with model: %s", settings.openai_model)
-            return OpenAILLMService()
-        if provider == "google":
-            logger.info("Using Google LLM service with model: %s", settings.google_model)
-            return GoogleLLMService()
-        raise ValueError(f"Unsupported LLM provider: {provider}. Supported: openai, google")
+register_llm_service("openai", OpenAILLMService)
+register_llm_service("google", GoogleLLMService)
 
 
 _llm_service: BaseLLMService | None = None

@@ -12,7 +12,7 @@ from collections.abc import AsyncGenerator
 
 from src.config import settings
 from src.libs.resume_cache import ResumeCacheEntry, get_resume_cache
-from src.services.llm_service import get_llm_service
+from src.services.llm_service import BaseLLMService, get_llm_service
 from src.services.profile_service import get_profile_service, ProfileService
 from src.schemas import (
     ResumeMatch,
@@ -46,7 +46,7 @@ class ResumeService:
     """Service for resume-related operations"""
 
     def __init__(self) -> None:
-        self.llm_service = get_llm_service()
+        self.llm_service: BaseLLMService = get_llm_service()
         self.profile_service: ProfileService | None
         try:
             self.profile_service = get_profile_service()
