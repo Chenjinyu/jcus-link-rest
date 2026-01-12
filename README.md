@@ -21,105 +21,193 @@ uv run python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 
 Below are example JSON-RPC payloads you can send to `/mcp` for the MCP tools.
 
-### list_matched_job_skills
-Parse a job description (file/text/url) and return matched chunks with similarity rates.
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "tools/call",
-  "params": {
-    "name": "list_matched_job_skills",
-    "arguments": {
-      "input_type": "file",
-      "filename": "job-description.pdf",
-      "input_data": "<base64-encoded-file>",
-      "top_k": 10,
-      "threshold": 0.5
-    }
-  }
-}
+### Tools
+1. List matched job skills
+```sh
+curl -s http://localhost:8000/mcp \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "tools/call",
+      "params": {
+        "name": "list_matched_job_skills",
+        "arguments": {
+          "input_type": "text",
+          "input_data": "We need a backend engineer with FastAPI and AWS.",
+          "top_k": 5,
+          "threshold": 0.5
+        }
+      }
+    }'
 ```
 
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 2,
-  "method": "tools/call",
-  "params": {
-    "name": "list_matched_job_skills",
-    "arguments": {
-      "input_type": "text",
-      "input_data": "We need a backend engineer with FastAPI, Postgres, and AWS experience.",
-      "top_k": 5
-    }
-  }
-}
+2. generate a latest/updated resume
+```sh
+curl -s http://localhost:8000/mcp \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "id": 2,
+      "method": "tools/call",
+      "params": {
+        "name": "generate_updated_resume",
+        "arguments": {
+          "job_description": "We need a backend engineer with FastAPI and AWS.",
+          "top_k": 5,
+          "use_cache": true
+        }
+      }
+    }'
 ```
 
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 3,
-  "method": "tools/call",
-  "params": {
-    "name": "list_matched_job_skills",
-    "arguments": {
-      "input_type": "url",
-      "input_data": "https://example.com/job-posting"
-    }
-  }
-}
+3. download the latest resume
+```sh
+curl -s http://localhost:8000/mcp \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "id": 3,
+      "method": "tools/call",
+      "params": {
+        "name": "download_latest_resume",
+        "arguments": {
+          "use_cache": true
+        }
+      }
+    }'
 ```
 
-### generate_updated_resume
-Generate a resume tailored to a job description (uses cache when enabled).
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 4,
-  "method": "tools/call",
-  "params": {
-    "name": "generate_updated_resume",
-    "arguments": {
-      "job_description": "We need a backend engineer with FastAPI, Postgres, and AWS experience.",
-      "top_k": 5,
-      "use_cache": true
-    }
-  }
-}
+4. Check the cache status for storing resume with LRU
+```sh
+curl -s http://localhost:8000/mcp \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "id": 4,
+      "method": "tools/call",
+      "params": {
+        "name": "resume_cache_status",
+        "arguments": {}
+      }
+    }'
 ```
 
-### download_latest_resume
-Return the latest resume without a job description (uses cache when enabled).
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 5,
-  "method": "tools/call",
-  "params": {
-    "name": "download_latest_resume",
-    "arguments": {
-      "use_cache": true
-    }
-  }
-}
+### Resources
+1. get all resources
+```sh
+  curl -s http://localhost:8000/mcp \
+    -H "Content-Type: application/json" \
+      "id": 9,
+      "method": "resources/list",
+      "params": {}
+    }'
 ```
 
-### resume_cache_status
-Return resume cache statistics for health checks.
+2. get server info
+```sh
+  curl -s http://localhost:8000/mcp \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "id": 10,
+      "method": "resources/read",
+      "params": {
+        "uri": "resource://mcp/server-info"
+      }
+    }'
+```
 
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 6,
-  "method": "tools/call",
-  "params": {
-    "name": "resume_cache_status",
-    "arguments": {}
-  }
-}
+3. get prompts info
+```sh
+  curl -s http://localhost:8000/mcp \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "id": 11,
+      "method": "resources/read",
+      "params": {
+        "uri": "resource://mcp/prompts"
+      }
+    }'
+```
+
+4. get resume generation prompt from resources
+```sh
+  curl -s http://localhost:8000/mcp \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "id": 12,
+      "method": "resources/read",
+      "params": {
+        "uri": "resource://mcp/prompts/resume_generation_prompt"
+      }
+    }'
+```
+### Prompts
+1. List all prompts
+```sh
+  curl -s http://localhost:8000/mcp \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "id": 5,
+      "method": "prompts/list",
+      "params": {}
+    }'
+```
+
+3. get resume gerneation prompt
+```sh
+  curl -s http://localhost:8000/mcp \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "id": 6,
+      "method": "prompts/get",
+      "params": {
+        "name": "resume_generation_prompt",
+        "arguments": {
+          "job_description": "We need a backend engineer with FastAPI and AWS.",
+          "matched_resumes": []
+        }
+      }
+    }'
+```
+
+4. get job analysis prompt
+```sh
+  curl -s http://localhost:8000/mcp \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "id": 7,
+      "method": "prompts/get",
+      "params": {
+        "name": "job_analysis_prompt",
+        "arguments": {
+          "job_description": "We need a backend engineer with FastAPI and AWS."
+        }
+      }
+    }'
+```
+
+5. get resume from source prompt
+```sh
+  curl -s http://localhost:8000/mcp \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "id": 8,
+      "method": "prompts/get",
+      "params": {
+        "name": "resume_from_source_prompt",
+        "arguments": {
+          "job_description": "We need a backend engineer with FastAPI and AWS.",
+          "resume_source": {"skills": ["FastAPI", "AWS"]},
+          "match_summary": {"top_matches": ["FastAPI"]}
+        }
+      }
+    }'
 ```
