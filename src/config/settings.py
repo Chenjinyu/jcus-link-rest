@@ -56,21 +56,10 @@ class Settings(BaseSettings):
     chromadb_port: int | None = None
     chromadb_collection: str = "resumes"
     
-    # Embeddings
-    embedding_model: str = "nomic-embed-text-768"
-    embedding_dimension: int = 768
-    vector_search_model_name: str = "all-MiniLM-L6-v2"
-    
     # LLM Service
-    llm_provider: str = "openai"  # openai, google
-    
-    # OpenAI Provider
+    default_llm_provider: str = "ollama"  # openai, google, ollama. ollama uses local model
     openai_api_key: str | None = None
-    openai_model: str = "gpt-4o"  # Default OpenAI model
-    
-    # Google Provider
     google_api_key: str | None = None
-    google_model: str = "gemini-1.5-pro"  # Default Google model
     
     # Rate Limiting
     rate_limit_enabled: bool = True

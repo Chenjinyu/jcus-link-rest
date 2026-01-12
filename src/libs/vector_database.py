@@ -2,13 +2,10 @@
 import json
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Any, Dict, List, Literal, Union
+from typing import Any, Dict, List, Union
 
 import asyncpg
 from asyncpg.pool import PoolConnectionProxy
-import httpx
-import openai
-from google import genai
 from supabase import Client, create_client
 
 @dataclass
@@ -26,8 +23,6 @@ class VectorDatabase:
     """
     Comprehensive vector database interface for managing documents,
     embeddings, articles, profile data, and personal attributes.
-
-    Supports multiple AI providers: OpenAI, Ollama, Google Gemini
     """
 
     def __init__(
@@ -35,9 +30,6 @@ class VectorDatabase:
         supabase_url: str,
         supabase_key: str,
         postgres_url: str,
-        provider_name: Literal["openai", "google", "ollama"],
-        provider_key: str | None = None,
-        ollama_url: str = "http://localhost:11434",
     ):
         self.supabase: Client = create_client(supabase_url, supabase_key)
 
@@ -45,36 +37,9 @@ class VectorDatabase:
         self.postgres_url = postgres_url
         self.pg_pool: asyncpg.Pool | None = None
 
-        # Store provider name
-        self.provider_name = provider_name.lower()
-        if self.provider_name not in ["openai", "google", "ollama"]:
-            raise ValueError(
-                f"Unsupported provider: {provider_name}. Must be one of: openai, google, ollama"
-            )
-
-        # Initialize AI providers based on provider_name
-        self.openai_client = None
-        self.google_client = None
-        self.ollama_url = ollama_url
-
-        if self.provider_name == "openai":
-            if not provider_key:
-                raise ValueError("provider_key is required for OpenAI provider")
-            self.openai_client = openai.OpenAI(api_key=provider_key)
-        elif self.provider_name == "google":
-            if not provider_key:
-                raise ValueError("provider_key is required for Google provider")
-            self.google_client = genai.Client(api_key=provider_key)
-        elif self.provider_name == "ollama":
-            # Ollama is local, no API key needed
-            pass
-
         self._models_cache: dict[str, EmbeddingModel] = {}
         self._models_by_id: dict[str, EmbeddingModel] = {}
         self._load_models()
-
-        # Set model_name based on provider from available models
-        self.model_name = self._get_default_model_for_provider()
 
     async def init_pool(self):
         """Initialize PostgreSQL connection pool. Call this before using transaction methods."""
@@ -219,23 +184,8 @@ class VectorDatabase:
 
         return ". ".join(text_parts) if text_parts else ""
 
-    def _get_default_model_for_provider(self) -> str:
-        """Get default model name for the current provider"""
-        # Find first available model for this provider
-        for model_name, model in self._models_cache.items():
-            if model.provider == self.provider_name:
-                return model_name
-
-        # Fallback to default model names if not found in cache
-        defaults = {
-            "openai": "text-embedding-3-small",
-            "google": "text-embedding-004",
-            "ollama": "nomic-embed-text",
-        }
-        return defaults.get(self.provider_name, "nomic-embed-text-768")
-
     def _load_models(self) -> None:
-        """Load embedding models from database and set availability based on client initialization"""
+        """Load embedding models from database."""
         def _safe_int(value: Any, default: int = 0) -> int:
             try:
                 return int(value)
@@ -264,14 +214,6 @@ class VectorDatabase:
             if provider not in ["openai", "ollama", "google"]:
                 raise ValueError(f"Unsupported provider: {provider}")
 
-            # Determine availability based on provider and client initialization
-            if provider == "openai" and self.openai_client is None:
-                continue
-            elif provider == "ollama" and self.ollama_url is None:
-                continue
-            elif provider == "google" and self.google_client is None:
-                continue
-
             model_id = str(model_data.get("id", ""))
             self._models_cache[model_name] = EmbeddingModel(
                 id=model_id,
@@ -288,79 +230,24 @@ class VectorDatabase:
         print("--" * 20)
         print(self._models_cache)
 
-    # ========================================================================
-    # EMBEDDING CREATION - MULTI-PROVIDER
-    # ========================================================================
+    def list_embedding_models(self, provider: str | None = None) -> List[EmbeddingModel]:
+        """Return active embedding models, optionally filtered by provider."""
+        if provider is None:
+            return list(self._models_cache.values())
+        normalized = provider.strip().lower()
+        return [
+            model
+            for model in self._models_cache.values()
+            if model.provider == normalized
+        ]
 
-    async def create_embedding(
-        self, text: str, model_name: str | None = None
-    ) -> List[float]:
-        """
-        Create embedding using specified model.
-        Supports: OpenAI, Ollama, Google Gemini
-        """
-        # Use instance model_name if not provided
-        if model_name is None:
-            model_name = self.model_name
+    def get_embedding_model(self, name: str) -> EmbeddingModel | None:
+        """Get an embedding model by name."""
+        return self._models_cache.get(name)
 
-        model = self._models_cache.get(model_name)
-        if not model:
-            raise ValueError(f"Model {model_name} not found or not active")
-
-        if model.provider == "openai":
-            return await self._create_openai_embedding(text, model)
-        elif model.provider == "ollama":
-            return await self._create_ollama_embedding(text, model)
-        elif model.provider == "google":
-            return await self._create_google_embedding(text, model)
-        else:
-            raise ValueError(f"Provider {model.provider} not supported")
-
-    async def _create_openai_embedding(
-        self, text: str, model: EmbeddingModel
-    ) -> List[float]:
-        """Create OpenAI embedding with dimension reduction if needed"""
-        if not self.openai_client:
-            raise ValueError(
-                "OpenAI client not initialized. Provide openai_key in constructor."
-            )
-
-        dimensions = model.dimensions if model.dimensions <= 2000 else None
-        request_params: dict[str, Any] = {
-            "model": model.model_identifier,
-            "input": text,
-        }
-        if dimensions is not None:
-            request_params["dimensions"] = dimensions
-
-        response = self.openai_client.embeddings.create(**request_params)
-        return response.data[0].embedding
-
-    async def _create_ollama_embedding(
-        self, text: str, model: EmbeddingModel
-    ) -> List[float]:
-        """Create Ollama embedding (local)"""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.ollama_url}/api/embeddings",
-                json={"model": model.model_identifier, "prompt": text},
-                timeout=30.0,
-            )
-            return response.json()["embedding"]
-
-    async def _create_google_embedding(
-        self, text: str, model: EmbeddingModel
-    ) -> List[float]:
-        """Create Google Gemini embedding"""
-        if not self.google_client:
-            raise ValueError(
-                "Google client not initialized. Provide google_key in constructor."
-            )
-
-        result = self.google_client.embed_content(
-            model=model.model_identifier, content=text, task_type="retrieval_document"
-        )
-        return result["embedding"]
+    def get_embedding_model_by_id(self, model_id: str) -> EmbeddingModel | None:
+        """Get an embedding model by ID."""
+        return self._models_by_id.get(model_id)
 
     # ========================================================================
     # DOCUMENT OPERATIONS
@@ -376,6 +263,7 @@ class VectorDatabase:
         document_id: str,
         chunks: List[str],
         model_names: List[str],
+        embeddings_by_model: dict[str, List[List[float]]],
     ) -> None:
         if not chunks:
             return
@@ -384,10 +272,17 @@ class VectorDatabase:
             model = self._models_cache.get(model_name)
             if not model:
                 raise ValueError(f"Model {model_name} not found or not active")
+            embeddings = embeddings_by_model.get(model_name)
+            if embeddings is None:
+                raise ValueError(f"Missing embeddings for model {model_name}")
+            if len(embeddings) != total_chunks:
+                raise ValueError(
+                    f"Embeddings count mismatch for {model_name}: "
+                    f"expected {total_chunks}, got {len(embeddings)}"
+                )
 
             for chunk_index, chunk_text in enumerate(chunks):
-                embedding = await self.create_embedding(chunk_text, model_name)
-                embedding_str = self._embedding_to_vector_str(embedding)
+                embedding_str = self._embedding_to_vector_str(embeddings[chunk_index])
 
                 await conn.execute(
                     """
@@ -421,6 +316,7 @@ class VectorDatabase:
         model_names: List[str] | None = None,
         chunk_size: int = 500,
         chunk_overlap: int = 50,
+        embeddings_by_model: dict[str, List[List[float]]] | None = None,
     ) -> str:
         """
         Add document with embeddings from multiple models using database transaction.
@@ -436,6 +332,8 @@ class VectorDatabase:
             model_names = list(self._models_cache.keys())
 
         chunks = self._chunk_text(content, chunk_size, chunk_overlap)
+        if embeddings_by_model is None:
+            raise ValueError("embeddings_by_model is required to add a document")
 
         async with self.pg_pool.acquire() as conn:
             async with conn.transaction():
@@ -455,7 +353,7 @@ class VectorDatabase:
 
                 # Create and insert embeddings for each model
                 await self._insert_embeddings_for_models(
-                    conn, document_id, chunks, model_names
+                    conn, document_id, chunks, model_names, embeddings_by_model
                 )
 
         return document_id
@@ -470,6 +368,7 @@ class VectorDatabase:
         recreate_embeddings: bool = True,
         chunk_size: int = 500,
         chunk_overlap: int = 50,
+        embeddings_by_model: dict[str, List[List[float]]] | None = None,
     ) -> bool:
         """Update document and optionally recreate embeddings using database transaction"""
         if not self.pg_pool:
@@ -519,6 +418,10 @@ class VectorDatabase:
 
                 # Recreate embeddings if content changed
                 if recreate_embeddings and content is not None:
+                    if embeddings_by_model is None:
+                        raise ValueError(
+                            "embeddings_by_model is required to recreate embeddings"
+                        )
                     # Get existing embedding model IDs
                     existing = await conn.fetch(
                         "SELECT DISTINCT embedding_model_id FROM embeddings WHERE document_id = $1",
@@ -537,7 +440,11 @@ class VectorDatabase:
                     model_names = self._get_model_names_from_ids(model_ids)
                     if model_names:
                         await self._insert_embeddings_for_models(
-                            conn, document_id, chunks, model_names
+                            conn,
+                            document_id,
+                            chunks,
+                            model_names,
+                            embeddings_by_model,
                         )
 
         return True
@@ -613,9 +520,8 @@ class VectorDatabase:
         Args:
             chunks: List of dicts with 'text', 'embedding', 'chunk_index'
         """
-        # Use instance model_name if not provided
         if model_name is None:
-            model_name = self.model_name
+            raise ValueError("model_name is required for upsert_document_with_embedding_rpc_function")
 
         chunks_json = chunks or []
 
@@ -653,6 +559,7 @@ class VectorDatabase:
         model_names: List[str] | None = None,
         chunk_size: int = 500,
         chunk_overlap: int = 50,
+        embeddings_by_model: dict[str, List[List[float]]] | None = None,
     ) -> dict[str, Any]:
         """Add article with document and embeddings using database transaction"""
         if not self.pg_pool:
@@ -664,6 +571,8 @@ class VectorDatabase:
             model_names = list(self._models_cache.keys())
 
         chunks = self._chunk_text(content, chunk_size, chunk_overlap)
+        if embeddings_by_model is None:
+            raise ValueError("embeddings_by_model is required to add an article")
 
         async with self.pg_pool.acquire() as conn:
             async with conn.transaction():
@@ -710,7 +619,7 @@ class VectorDatabase:
 
                 # Create embeddings
                 await self._insert_embeddings_for_models(
-                    conn, document_id, chunks, model_names
+                    conn, document_id, chunks, model_names, embeddings_by_model
                 )
 
         return {"article_id": article_id, "document_id": document_id}
@@ -731,6 +640,7 @@ class VectorDatabase:
         recreate_embeddings: bool = True,
         chunk_size: int = 500,
         chunk_overlap: int = 50,
+        embeddings_by_model: dict[str, List[List[float]]] | None = None,
     ) -> bool:
         """Update article and optionally recreate embeddings using database transaction"""
         if not self.pg_pool:
@@ -855,6 +765,10 @@ class VectorDatabase:
 
                 # Recreate embeddings if needed
                 if recreate_embeddings and content is not None:
+                    if embeddings_by_model is None:
+                        raise ValueError(
+                            "embeddings_by_model is required to recreate embeddings"
+                        )
                     existing = await conn.fetch(
                         "SELECT DISTINCT embedding_model_id FROM embeddings WHERE document_id = $1",
                         document_id,
@@ -869,7 +783,11 @@ class VectorDatabase:
                     model_names = self._get_model_names_from_ids(model_ids)
                     if model_names:
                         await self._insert_embeddings_for_models(
-                            conn, document_id, chunks, model_names
+                            conn,
+                            document_id,
+                            chunks,
+                            model_names,
+                            embeddings_by_model,
                         )
 
         return True
@@ -988,6 +906,7 @@ class VectorDatabase:
         model_names: List[str] | None = None,
         chunk_size: int = 500,
         chunk_overlap: int = 50,
+        embeddings_by_model: dict[str, List[List[float]]] | None = None,
     ) -> dict[str, Any]:
         """Add profile data with optional document/embedding using database transaction"""
         if not self.pg_pool:
@@ -1027,6 +946,10 @@ class VectorDatabase:
                 document_id = None
 
                 if searchable:
+                    if embeddings_by_model is None:
+                        raise ValueError(
+                            "embeddings_by_model is required to add searchable profile data"
+                        )
                     # Generate searchable_text in Python (profile_data table doesn't have searchable_text column)
                     # This replicates the trigger logic from update_profile_data_searchable_text()
                     searchable_text = self._generate_searchable_text_from_profile_data(
@@ -1058,7 +981,7 @@ class VectorDatabase:
                         searchable_text, chunk_size, chunk_overlap
                     )
                     await self._insert_embeddings_for_models(
-                        conn, document_id, chunks, model_names
+                        conn, document_id, chunks, model_names, embeddings_by_model
                     )
 
                     # Update profile_data with document_id
@@ -1082,6 +1005,7 @@ class VectorDatabase:
         recreate_embeddings: bool = True,
         chunk_size: int = 500,
         chunk_overlap: int = 50,
+        embeddings_by_model: dict[str, List[List[float]]] | None = None,
     ) -> bool:
         """Update profile data and optionally recreate embeddings using database transaction"""
         if not self.pg_pool:
@@ -1158,6 +1082,10 @@ class VectorDatabase:
 
                 # Recreate embeddings if needed
                 if document_id and recreate_embeddings and data:
+                    if embeddings_by_model is None:
+                        raise ValueError(
+                            "embeddings_by_model is required to recreate embeddings"
+                        )
                     # Get updated data and generate searchable_text in Python
                     updated_profile = await conn.fetchrow(
                         "SELECT data FROM profile_data WHERE id = $1", profile_id
@@ -1198,7 +1126,11 @@ class VectorDatabase:
                     model_names = self._get_model_names_from_ids(model_ids)
                     if model_names:
                         await self._insert_embeddings_for_models(
-                            conn, document_id, chunks, model_names
+                            conn,
+                            document_id,
+                            chunks,
+                            model_names,
+                            embeddings_by_model,
                         )
 
         return True
@@ -1286,6 +1218,7 @@ class VectorDatabase:
         model_names: List[str] | None = None,
         chunk_size: int = 500,
         chunk_overlap: int = 50,
+        embeddings_by_model: dict[str, List[List[float]]] | None = None,
     ) -> dict[str, Any]:
         """Add personal attribute with optional document/embedding using database transaction"""
         if not self.pg_pool:
@@ -1321,6 +1254,10 @@ class VectorDatabase:
                 document_id = None
 
                 if searchable:
+                    if embeddings_by_model is None:
+                        raise ValueError(
+                            "embeddings_by_model is required to add searchable personal attributes"
+                        )
                     # the SQL function: update_personal_attributes_searchable_text_trigger will be triggered before insert or update on personal_attributes table
                     # Get searchable_text
                     searchable_text_row = await conn.fetchrow(
@@ -1355,7 +1292,7 @@ class VectorDatabase:
                         searchable_text, chunk_size, chunk_overlap
                     )
                     await self._insert_embeddings_for_models(
-                        conn, document_id, chunks, model_names
+                        conn, document_id, chunks, model_names, embeddings_by_model
                     )
 
                     # Update personal_attributes with document_id
@@ -1389,9 +1326,8 @@ class VectorDatabase:
         Call SQL function to add personal attribute.
         Returns attribute_id.
         """
-        # Use instance model_name if not provided
         if model_name is None:
-            model_name = self.model_name
+            raise ValueError("model_name is required for add_personal_attribute_rpc_function")
 
         result = self.supabase.rpc(
             "add_personal_attribute",
@@ -1462,6 +1398,7 @@ class VectorDatabase:
         recreate_embeddings: bool = True,
         chunk_size: int = 500,
         chunk_overlap: int = 50,
+        embeddings_by_model: dict[str, List[List[float]]] | None = None,
     ) -> bool:
         """Update personal attribute using database transaction"""
         if not self.pg_pool:
@@ -1541,6 +1478,10 @@ class VectorDatabase:
                     and recreate_embeddings
                     and (title or description or examples)
                 ):
+                    if embeddings_by_model is None:
+                        raise ValueError(
+                            "embeddings_by_model is required to recreate embeddings"
+                        )
                     # Get updated searchable_text and title
                     updated_attr = await conn.fetchrow(
                         "SELECT searchable_text, title FROM personal_attributes WHERE id = $1",
@@ -1577,7 +1518,11 @@ class VectorDatabase:
                     model_names = self._get_model_names_from_ids(model_ids)
                     if model_names:
                         await self._insert_embeddings_for_models(
-                            conn, document_id, chunks, model_names
+                            conn,
+                            document_id,
+                            chunks,
+                            model_names,
+                            embeddings_by_model,
                         )
 
                 return True
@@ -1662,6 +1607,7 @@ class VectorDatabase:
         threshold: float = 0.7,
         limit: int = 10,
         model_name: str | None = None,
+        query_embedding: List[float] | None = None,
     ) -> List[dict[str, Any]]:
         """
         Search across all content using vector similarity.
@@ -1678,11 +1624,11 @@ class VectorDatabase:
         Note: Uses Supabase client (single operation) - no transaction needed.
         For multi-operation atomicity, use asyncpg pool with transactions.
         """
-        # Use instance model_name if not provided
         if model_name is None:
-            model_name = self.model_name
+            raise ValueError("model_name is required for search_rpc_function")
 
-        query_embedding = await self.create_embedding(query, model_name)
+        if query_embedding is None:
+            raise ValueError("query_embedding is required for search_rpc_function")
 
         model = self._models_cache.get(model_name)
         if not model:
@@ -1715,16 +1661,21 @@ class VectorDatabase:
         threshold: float = 0.7,
         limit: int = 10,
         model_name: str | None = None,
+        query_embedding: List[float] | None = None,
     ) -> List[dict[str, Any]]:
         """
         Simplified search across all content.
         Uses the search_similar_content SQL function.
         """
-        # Use instance model_name if not provided
         if model_name is None:
-            model_name = self.model_name
+            raise ValueError(
+                "model_name is required for search_all_similar_content_rpc_function"
+            )
 
-        query_embedding = await self.create_embedding(query, model_name)
+        if query_embedding is None:
+            raise ValueError(
+                "query_embedding is required for search_all_similar_content_rpc_function"
+            )
 
         results = self.supabase.rpc(
             "search_similar_content",
@@ -1753,11 +1704,16 @@ class VectorDatabase:
         content_type: str | None = None,
         similarity_threshold: float = 0.85,
         model_name: str | None = None,
+        query_embedding: List[float] | None = None,
+        embeddings_by_model: dict[str, List[List[float]]] | None = None,
     ) -> dict[str, Any]:
         """Intelligently find and update documents based on semantic similarity"""
-        # Use instance model_name if not provided
         if model_name is None:
-            model_name = self.model_name
+            raise ValueError("model_name is required for smart_update")
+        if query_embedding is None:
+            raise ValueError("query_embedding is required for smart_update")
+        if embeddings_by_model is None:
+            raise ValueError("embeddings_by_model is required for smart_update")
 
         matches = await self.search_rpc_function(
             query=update_description,
@@ -1766,6 +1722,7 @@ class VectorDatabase:
             threshold=similarity_threshold,
             limit=3,
             model_name=model_name,
+            query_embedding=query_embedding,
         )
 
         if not matches:
@@ -1787,7 +1744,10 @@ class VectorDatabase:
             }
 
         update_result = await self._apply_smart_update(
-            document=document, best_match=best_match, new_content=new_content
+            document=document,
+            best_match=best_match,
+            new_content=new_content,
+            embeddings_by_model=embeddings_by_model,
         )
 
         return {
@@ -1803,15 +1763,22 @@ class VectorDatabase:
         }
 
     async def _apply_smart_update(
-        self, document: dict[str, Any], best_match: dict[str, Any], new_content: str
+        self,
+        document: dict[str, Any],
+        best_match: dict[str, Any],
+        new_content: str,
+        embeddings_by_model: dict[str, List[List[float]]] | None = None,
     ) -> dict[str, Any]:
         """Apply update to the appropriate table based on match type"""
+        if embeddings_by_model is None:
+            raise ValueError("embeddings_by_model is required for smart update")
 
         if best_match.get("article_id"):
             await self.update_article(
                 article_id=best_match["article_id"],
                 content=new_content,
                 recreate_embeddings=True,
+                embeddings_by_model=embeddings_by_model,
             )
             return {"type": "article", "id": best_match["article_id"]}
 
@@ -1827,6 +1794,7 @@ class VectorDatabase:
                 profile_id=best_match["profile_data_id"],
                 data=updated_data,
                 recreate_embeddings=True,
+                embeddings_by_model=embeddings_by_model,
             )
             return {"type": "profile_data", "id": best_match["profile_data_id"]}
 
@@ -1835,6 +1803,7 @@ class VectorDatabase:
                 attribute_id=best_match["personal_attribute_id"],
                 description=new_content,
                 recreate_embeddings=True,
+                embeddings_by_model=embeddings_by_model,
             )
             return {
                 "type": "personal_attribute",
@@ -1846,6 +1815,7 @@ class VectorDatabase:
                 document_id=document["id"],
                 content=new_content,
                 recreate_embeddings=True,
+                embeddings_by_model=embeddings_by_model,
             )
             return {"type": "document", "id": document["id"]}
 
@@ -1854,11 +1824,13 @@ class VectorDatabase:
         user_id: str,
         update_request: str,
         model_name: str | None = None,
+        query_embedding: List[float] | None = None,
     ) -> List[dict[str, Any]]:
         """Find potential updates but don't apply them yet"""
-        # Use instance model_name if not provided
         if model_name is None:
-            model_name = self.model_name
+            raise ValueError("model_name is required for propose_updates")
+        if query_embedding is None:
+            raise ValueError("query_embedding is required for propose_updates")
 
         matches = await self.search_rpc_function(
             query=update_request,
@@ -1866,6 +1838,7 @@ class VectorDatabase:
             threshold=0.75,
             limit=5,
             model_name=model_name,
+            query_embedding=query_embedding,
         )
 
         proposals = []
@@ -1892,29 +1865,42 @@ class VectorDatabase:
         article_id: str | None = None,
         profile_data_id: str | None = None,
         personal_attribute_id: str | None = None,
+        embeddings_by_model: dict[str, List[List[float]]] | None = None,
     ) -> bool:
         """Apply a confirmed update after user approval"""
+        if embeddings_by_model is None:
+            raise ValueError("embeddings_by_model is required for apply_confirmed_update")
 
         if article_id:
             await self.update_article(
-                article_id=article_id, content=new_content, recreate_embeddings=True
+                article_id=article_id,
+                content=new_content,
+                recreate_embeddings=True,
+                embeddings_by_model=embeddings_by_model,
             )
         elif profile_data_id:
             profile = self.get_profile_data(profile_data_id)
             if profile and "data" in profile:
                 updated_data = self._merge_profile_data(profile["data"], new_content)
                 await self.update_profile_data(
-                    profile_id=profile_data_id, data=updated_data, recreate_embeddings=True
+                    profile_id=profile_data_id,
+                    data=updated_data,
+                    recreate_embeddings=True,
+                    embeddings_by_model=embeddings_by_model,
                 )
         elif personal_attribute_id:
             await self.update_personal_attribute(
                 attribute_id=personal_attribute_id,
                 description=new_content,
                 recreate_embeddings=True,
+                embeddings_by_model=embeddings_by_model,
             )
         else:
             await self.update_document(
-                document_id=document_id, content=new_content, recreate_embeddings=True
+                document_id=document_id,
+                content=new_content,
+                recreate_embeddings=True,
+                embeddings_by_model=embeddings_by_model,
             )
 
         return True
@@ -1922,6 +1908,10 @@ class VectorDatabase:
     # ========================================================================
     # HELPER METHODS
     # ========================================================================
+
+    def chunk_text(self, text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]:
+        """Public chunking helper to align embeddings with database inserts."""
+        return self._chunk_text(text, chunk_size, overlap)
 
     def _chunk_text(
         self, text: str, chunk_size: int = 500, overlap: int = 50

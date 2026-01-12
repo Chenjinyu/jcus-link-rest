@@ -12,7 +12,7 @@ if __name__ == "__main__":
     print(f"📚 API Docs: http://{settings.host}:{settings.port}/docs")
     print(f"🔧 MCP Endpoint: http://{settings.host}:{settings.port}/mcp")
     print(f"❤️  Health Check: http://{settings.host}:{settings.port}/api/health")
-    print(f"🔑 LLM Provider: {settings.llm_provider}")
+    print(f"🔑 LLM Provider: {settings.default_llm_provider}")
     print(f"💾 Vector DB: {settings.vector_db_type}")
     print("-" * 60)
     

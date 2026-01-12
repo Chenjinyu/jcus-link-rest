@@ -8,6 +8,10 @@ from typing import Any, Iterable
 
 from src.config import settings
 from src.libs.vector_database import VectorDatabase
+from src.services.llm_service import (
+    create_embedding,
+    get_default_embedding_model,
+)
 
 
 def _stable_json(data: Any) -> str:
@@ -21,22 +25,13 @@ class ProfileService:
         if not settings.supabase_url or not settings.supabase_key:
             raise ValueError("Supabase credentials are required")
 
-        # Determine provider key from settings
-        if provider_name == "openai":
-            provider_key = settings.openai_api_key
-        elif provider_name == "google":
-            provider_key = settings.google_api_key
-        elif provider_name == "ollama":
-            provider_key = None  # Ollama doesn't need an API key
-        else:
-            raise ValueError(f"Unsupported provider: {provider_name}. Must be one of: openai, google, ollama")
+        self._provider_name = provider_name
+        default_model = get_default_embedding_model(provider_name)
 
         self._db = VectorDatabase(
             supabase_url=settings.supabase_url,
             supabase_key=settings.supabase_key,
             postgres_url=settings.supabase_postgres_url or "",
-            provider_name=provider_name,
-            provider_key=provider_key,
         )
 
     async def search_job_matches(
@@ -47,12 +42,24 @@ class ProfileService:
         threshold: float,
         model_name: str | None = None,
     ) -> list[dict[str, Any]]:
+        resolved_model_name = model_name
+        if not resolved_model_name:
+            default_model = get_default_embedding_model(self._provider_name)
+            resolved_model_name = default_model.name if default_model else None
+        if not resolved_model_name:
+            raise ValueError("No embedding model configured for search")
+        query_embedding = await create_embedding(
+            job_description,
+            model_name=resolved_model_name,
+            provider=self._provider_name,
+        )
         return await self._db.search_rpc_function(
             query=job_description,
             user_id=user_id,
             threshold=threshold,
             limit=top_k,
-            model_name=model_name or settings.vector_search_model_name,
+            model_name=resolved_model_name,
+            query_embedding=query_embedding,
         )
 
     def get_profile_data_by_ids(self, profile_ids: Iterable[str]) -> list[dict[str, Any] | Any]:
