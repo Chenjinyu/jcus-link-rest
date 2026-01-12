@@ -16,7 +16,10 @@ def _post_json(url: str, payload: dict[str, Any]) -> dict[str, Any]:
     req = urllib.request.Request(
         url,
         data=data,
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        },
         method="POST",
     )
     with urllib.request.urlopen(req) as resp:

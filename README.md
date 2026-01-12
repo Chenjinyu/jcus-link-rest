@@ -19,6 +19,16 @@ uv run python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 
 ## MCP tool examples
 
+FastMCP’s streamable HTTP transport can reply in two modes on the same endpoint:
+
+- application/json for normal JSON‑RPC responses (single response body).
+- text/event-stream for streamed responses and session events.
+
+The server enforces that the client explicitly declares it can handle both, because it may choose either based on the request or server state. That’s why it rejects requests that only accept one of them.
+So: FastMCP streamable HTTP requires clients to accept both
+`application/json` and `text/event-stream`, so include the Accept header in
+requests.
+
 Below are example JSON-RPC payloads you can send to `/mcp` for the MCP tools.
 
 ### Tools
@@ -26,6 +36,7 @@ Below are example JSON-RPC payloads you can send to `/mcp` for the MCP tools.
 ```sh
 curl -s http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
     -d '{
       "jsonrpc": "2.0",
       "id": 1,
@@ -46,6 +57,7 @@ curl -s http://localhost:8000/mcp \
 ```sh
 curl -s http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
     -d '{
       "jsonrpc": "2.0",
       "id": 2,
@@ -65,6 +77,7 @@ curl -s http://localhost:8000/mcp \
 ```sh
 curl -s http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
     -d '{
       "jsonrpc": "2.0",
       "id": 3,
@@ -82,6 +95,7 @@ curl -s http://localhost:8000/mcp \
 ```sh
 curl -s http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
     -d '{
       "jsonrpc": "2.0",
       "id": 4,
@@ -98,6 +112,9 @@ curl -s http://localhost:8000/mcp \
 ```sh
   curl -s http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
+    -d '{
+      "jsonrpc": "2.0",
       "id": 9,
       "method": "resources/list",
       "params": {}
@@ -108,6 +125,7 @@ curl -s http://localhost:8000/mcp \
 ```sh
   curl -s http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
     -d '{
       "jsonrpc": "2.0",
       "id": 10,
@@ -122,6 +140,7 @@ curl -s http://localhost:8000/mcp \
 ```sh
   curl -s http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
     -d '{
       "jsonrpc": "2.0",
       "id": 11,
@@ -136,6 +155,7 @@ curl -s http://localhost:8000/mcp \
 ```sh
   curl -s http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
     -d '{
       "jsonrpc": "2.0",
       "id": 12,
@@ -150,6 +170,7 @@ curl -s http://localhost:8000/mcp \
 ```sh
   curl -s http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
     -d '{
       "jsonrpc": "2.0",
       "id": 5,
@@ -162,6 +183,7 @@ curl -s http://localhost:8000/mcp \
 ```sh
   curl -s http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
     -d '{
       "jsonrpc": "2.0",
       "id": 6,
@@ -180,6 +202,7 @@ curl -s http://localhost:8000/mcp \
 ```sh
   curl -s http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
     -d '{
       "jsonrpc": "2.0",
       "id": 7,
@@ -197,6 +220,7 @@ curl -s http://localhost:8000/mcp \
 ```sh
   curl -s http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
     -d '{
       "jsonrpc": "2.0",
       "id": 8,

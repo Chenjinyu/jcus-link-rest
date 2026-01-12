@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastmcp import FastMCP
+from starlette.routing import Route
 
 from src.config.settings import settings
 from src.api.health import router as health_router
@@ -21,11 +22,22 @@ def create_mcp() -> FastMCP:
 
 
 def create_app() -> FastAPI:
+    mcp = create_mcp()
+    # FastMCP defaults to /mcp; when mounted at /mcp we need a root path here.
+    mcp_app = mcp.http_app(
+        path="/",
+        transport="streamable-http",
+        stateless_http=True, # FastMCP’s streamable HTTP transport is session‑based by default, so it expects an mcp-session-id. To make your curl calls work without sessions, I set it to stateless mode.
+    )
+
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
         debug=settings.debug,
+        lifespan=mcp_app.lifespan,
     )
+    # Disable automatic trailing-slash redirects for all routes (including mounts).
+    app.router.redirect_slashes = False
 
     app.add_middleware(
         CORSMiddleware,
@@ -38,10 +50,35 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router, prefix="/api")
 
-    mcp = create_mcp()
     app.state.mcp = mcp
+    # Avoid 307 redirects on POST /mcp by disabling slash redirects on the sub-app.
+    mcp_app.router.redirect_slashes = False
+    # Allow both /mcp and /mcp/ without redirects by proxying /mcp to the sub-app root.
+    class _McpRootProxy:
+        def __init__(self, inner_app) -> None:
+            self._app = inner_app
 
-    app.mount("/mcp", mcp.http_app(transport="streamable-http"))
+        async def __call__(self, scope, receive, send) -> None:
+            # only the scope['schema'] has http and https
+            if scope.get("type") == "http":
+                scope = dict(scope)
+                scope["path"] = "/"
+                scope["raw_path"] = b"/"
+            await self._app(scope, receive, send)
+            
+    # • FastMCP’s streamable HTTP transport uses multiple verbs:
+    #   - POST is for JSON‑RPC calls.
+    #   - GET is used for streamable polling/resume behavior.
+    #   - DELETE is used to terminate sessions.
+    #   - OPTIONS is for CORS preflight when browsers call POST.
+    app.router.routes.append(
+        Route(
+            "/mcp",
+            _McpRootProxy(mcp_app),
+            methods=["GET", "POST", "DELETE", "OPTIONS"],
+        )
+    )
+    app.mount("/mcp", mcp_app)
 
     return app
 
