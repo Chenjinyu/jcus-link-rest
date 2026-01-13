@@ -139,6 +139,34 @@ def get_embedding_provider() -> EmbeddingProvider:
     return _embedding_provider
 
 
+def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]:
+    words = text.split()
+    if len(words) <= chunk_size:
+        return [text]
+    chunks = []
+    for i in range(0, len(words), chunk_size - overlap):
+        chunk = " ".join(words[i : i + chunk_size])
+        if chunk:
+            chunks.append(chunk)
+    return chunks
+
+
+async def build_embeddings_by_model(
+    chunks: list[str],
+    model_names: list[str],
+) -> dict[str, list[list[float]]]:
+    embeddings_by_model: dict[str, list[list[float]]] = {}
+    for model_name in model_names:
+        model = get_embedding_model_by_name(model_name)
+        if not model:
+            raise ValueError(f"Embedding model not found: {model_name}")
+        embeddings: list[list[float]] = []
+        for chunk in chunks:
+            embeddings.append(await get_embedding_provider().create_embedding(chunk, model))
+        embeddings_by_model[model_name] = embeddings
+    return embeddings_by_model
+
+
 async def create_embedding(
     text: str,
     model_name: str | None = None,

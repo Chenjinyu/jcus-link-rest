@@ -314,9 +314,8 @@ class VectorDatabase:
         metadata: dict[str, Any] | None = None,
         tags: List[str] | None = None,
         model_names: List[str] | None = None,
-        chunk_size: int = 500,
-        chunk_overlap: int = 50,
         embeddings_by_model: dict[str, List[List[float]]] | None = None,
+        chunks: List[str] | None = None,
     ) -> str:
         """
         Add document with embeddings from multiple models using database transaction.
@@ -331,9 +330,10 @@ class VectorDatabase:
         if model_names is None:
             model_names = list(self._models_cache.keys())
 
-        chunks = self._chunk_text(content, chunk_size, chunk_overlap)
         if embeddings_by_model is None:
             raise ValueError("embeddings_by_model is required to add a document")
+        if chunks is None:
+            raise ValueError("chunks is required to add a document")
 
         async with self.pg_pool.acquire() as conn:
             async with conn.transaction():
@@ -366,9 +366,8 @@ class VectorDatabase:
         metadata: dict[str, Any] | None = None,
         tags: List[str] | None = None,
         recreate_embeddings: bool = True,
-        chunk_size: int = 500,
-        chunk_overlap: int = 50,
         embeddings_by_model: dict[str, List[List[float]]] | None = None,
+        chunks: List[str] | None = None,
     ) -> bool:
         """Update document and optionally recreate embeddings using database transaction"""
         if not self.pg_pool:
@@ -422,6 +421,8 @@ class VectorDatabase:
                         raise ValueError(
                             "embeddings_by_model is required to recreate embeddings"
                         )
+                    if chunks is None:
+                        raise ValueError("chunks is required to recreate embeddings")
                     # Get existing embedding model IDs
                     existing = await conn.fetch(
                         "SELECT DISTINCT embedding_model_id FROM embeddings WHERE document_id = $1",
@@ -433,9 +434,6 @@ class VectorDatabase:
                     await conn.execute(
                         "DELETE FROM embeddings WHERE document_id = $1", document_id
                     )
-
-                    # Create new embeddings
-                    chunks = self._chunk_text(content, chunk_size, chunk_overlap)
 
                     model_names = self._get_model_names_from_ids(model_ids)
                     if model_names:
@@ -557,9 +555,8 @@ class VectorDatabase:
         seo_description: str | None = None,
         og_image: str | None = None,
         model_names: List[str] | None = None,
-        chunk_size: int = 500,
-        chunk_overlap: int = 50,
         embeddings_by_model: dict[str, List[List[float]]] | None = None,
+        chunks: List[str] | None = None,
     ) -> dict[str, Any]:
         """Add article with document and embeddings using database transaction"""
         if not self.pg_pool:
@@ -570,9 +567,10 @@ class VectorDatabase:
         if model_names is None:
             model_names = list(self._models_cache.keys())
 
-        chunks = self._chunk_text(content, chunk_size, chunk_overlap)
         if embeddings_by_model is None:
             raise ValueError("embeddings_by_model is required to add an article")
+        if chunks is None:
+            raise ValueError("chunks is required to add an article")
 
         async with self.pg_pool.acquire() as conn:
             async with conn.transaction():
@@ -638,9 +636,8 @@ class VectorDatabase:
         seo_description: str | None = None,
         og_image: str | None = None,
         recreate_embeddings: bool = True,
-        chunk_size: int = 500,
-        chunk_overlap: int = 50,
         embeddings_by_model: dict[str, List[List[float]]] | None = None,
+        chunks: List[str] | None = None,
     ) -> bool:
         """Update article and optionally recreate embeddings using database transaction"""
         if not self.pg_pool:
@@ -769,6 +766,8 @@ class VectorDatabase:
                         raise ValueError(
                             "embeddings_by_model is required to recreate embeddings"
                         )
+                    if chunks is None:
+                        raise ValueError("chunks is required to recreate embeddings")
                     existing = await conn.fetch(
                         "SELECT DISTINCT embedding_model_id FROM embeddings WHERE document_id = $1",
                         document_id,
@@ -779,7 +778,6 @@ class VectorDatabase:
                         "DELETE FROM embeddings WHERE document_id = $1", document_id
                     )
 
-                    chunks = self._chunk_text(content, chunk_size, chunk_overlap)
                     model_names = self._get_model_names_from_ids(model_ids)
                     if model_names:
                         await self._insert_embeddings_for_models(
@@ -904,9 +902,8 @@ class VectorDatabase:
         is_featured: bool = False,
         display_order: int | None = None,
         model_names: List[str] | None = None,
-        chunk_size: int = 500,
-        chunk_overlap: int = 50,
         embeddings_by_model: dict[str, List[List[float]]] | None = None,
+        chunks: List[str] | None = None,
     ) -> dict[str, Any]:
         """Add profile data with optional document/embedding using database transaction"""
         if not self.pg_pool:
@@ -950,6 +947,10 @@ class VectorDatabase:
                         raise ValueError(
                             "embeddings_by_model is required to add searchable profile data"
                         )
+                    if chunks is None:
+                        raise ValueError(
+                            "chunks is required to add searchable profile data"
+                        )
                     # Generate searchable_text in Python (profile_data table doesn't have searchable_text column)
                     # This replicates the trigger logic from update_profile_data_searchable_text()
                     searchable_text = self._generate_searchable_text_from_profile_data(
@@ -977,9 +978,6 @@ class VectorDatabase:
                     )
 
                     # Create embeddings
-                    chunks = self._chunk_text(
-                        searchable_text, chunk_size, chunk_overlap
-                    )
                     await self._insert_embeddings_for_models(
                         conn, document_id, chunks, model_names, embeddings_by_model
                     )
@@ -1003,9 +1001,8 @@ class VectorDatabase:
         is_featured: bool | None = None,
         display_order: int | None = None,
         recreate_embeddings: bool = True,
-        chunk_size: int = 500,
-        chunk_overlap: int = 50,
         embeddings_by_model: dict[str, List[List[float]]] | None = None,
+        chunks: List[str] | None = None,
     ) -> bool:
         """Update profile data and optionally recreate embeddings using database transaction"""
         if not self.pg_pool:
@@ -1086,6 +1083,8 @@ class VectorDatabase:
                         raise ValueError(
                             "embeddings_by_model is required to recreate embeddings"
                         )
+                    if chunks is None:
+                        raise ValueError("chunks is required to recreate embeddings")
                     # Get updated data and generate searchable_text in Python
                     updated_profile = await conn.fetchrow(
                         "SELECT data FROM profile_data WHERE id = $1", profile_id
@@ -1116,11 +1115,6 @@ class VectorDatabase:
                     # Delete old embeddings
                     await conn.execute(
                         "DELETE FROM embeddings WHERE document_id = $1", document_id
-                    )
-
-                    # Create new embeddings
-                    chunks = self._chunk_text(
-                        searchable_text, chunk_size, chunk_overlap
                     )
 
                     model_names = self._get_model_names_from_ids(model_ids)
@@ -1216,9 +1210,8 @@ class VectorDatabase:
         related_experiences: List[str] | None = None,
         searchable: bool = True,
         model_names: List[str] | None = None,
-        chunk_size: int = 500,
-        chunk_overlap: int = 50,
         embeddings_by_model: dict[str, List[List[float]]] | None = None,
+        chunks: List[str] | None = None,
     ) -> dict[str, Any]:
         """Add personal attribute with optional document/embedding using database transaction"""
         if not self.pg_pool:
@@ -1258,6 +1251,10 @@ class VectorDatabase:
                         raise ValueError(
                             "embeddings_by_model is required to add searchable personal attributes"
                         )
+                    if chunks is None:
+                        raise ValueError(
+                            "chunks is required to add searchable personal attributes"
+                        )
                     # the SQL function: update_personal_attributes_searchable_text_trigger will be triggered before insert or update on personal_attributes table
                     # Get searchable_text
                     searchable_text_row = await conn.fetchrow(
@@ -1288,9 +1285,6 @@ class VectorDatabase:
                     )
 
                     # Create embeddings
-                    chunks = self._chunk_text(
-                        searchable_text, chunk_size, chunk_overlap
-                    )
                     await self._insert_embeddings_for_models(
                         conn, document_id, chunks, model_names, embeddings_by_model
                     )
@@ -1396,9 +1390,8 @@ class VectorDatabase:
         related_articles: List[str] | None = None,
         related_experiences: List[str] | None = None,
         recreate_embeddings: bool = True,
-        chunk_size: int = 500,
-        chunk_overlap: int = 50,
         embeddings_by_model: dict[str, List[List[float]]] | None = None,
+        chunks: List[str] | None = None,
     ) -> bool:
         """Update personal attribute using database transaction"""
         if not self.pg_pool:
@@ -1482,6 +1475,8 @@ class VectorDatabase:
                         raise ValueError(
                             "embeddings_by_model is required to recreate embeddings"
                         )
+                    if chunks is None:
+                        raise ValueError("chunks is required to recreate embeddings")
                     # Get updated searchable_text and title
                     updated_attr = await conn.fetchrow(
                         "SELECT searchable_text, title FROM personal_attributes WHERE id = $1",
@@ -1508,11 +1503,6 @@ class VectorDatabase:
                     # Delete old embeddings
                     await conn.execute(
                         "DELETE FROM embeddings WHERE document_id = $1", document_id
-                    )
-
-                    # Create new embeddings
-                    chunks = self._chunk_text(
-                        searchable_text, chunk_size, chunk_overlap
                     )
 
                     model_names = self._get_model_names_from_ids(model_ids)
@@ -1706,6 +1696,7 @@ class VectorDatabase:
         model_name: str | None = None,
         query_embedding: List[float] | None = None,
         embeddings_by_model: dict[str, List[List[float]]] | None = None,
+        chunks: List[str] | None = None,
     ) -> dict[str, Any]:
         """Intelligently find and update documents based on semantic similarity"""
         if model_name is None:
@@ -1714,6 +1705,8 @@ class VectorDatabase:
             raise ValueError("query_embedding is required for smart_update")
         if embeddings_by_model is None:
             raise ValueError("embeddings_by_model is required for smart_update")
+        if chunks is None:
+            raise ValueError("chunks is required for smart_update")
 
         matches = await self.search_rpc_function(
             query=update_description,
@@ -1748,6 +1741,7 @@ class VectorDatabase:
             best_match=best_match,
             new_content=new_content,
             embeddings_by_model=embeddings_by_model,
+            chunks=chunks,
         )
 
         return {
@@ -1768,10 +1762,13 @@ class VectorDatabase:
         best_match: dict[str, Any],
         new_content: str,
         embeddings_by_model: dict[str, List[List[float]]] | None = None,
+        chunks: List[str] | None = None,
     ) -> dict[str, Any]:
         """Apply update to the appropriate table based on match type"""
         if embeddings_by_model is None:
             raise ValueError("embeddings_by_model is required for smart update")
+        if chunks is None:
+            raise ValueError("chunks is required for smart update")
 
         if best_match.get("article_id"):
             await self.update_article(
@@ -1779,6 +1776,7 @@ class VectorDatabase:
                 content=new_content,
                 recreate_embeddings=True,
                 embeddings_by_model=embeddings_by_model,
+                chunks=chunks,
             )
             return {"type": "article", "id": best_match["article_id"]}
 
@@ -1795,6 +1793,7 @@ class VectorDatabase:
                 data=updated_data,
                 recreate_embeddings=True,
                 embeddings_by_model=embeddings_by_model,
+                chunks=chunks,
             )
             return {"type": "profile_data", "id": best_match["profile_data_id"]}
 
@@ -1804,6 +1803,7 @@ class VectorDatabase:
                 description=new_content,
                 recreate_embeddings=True,
                 embeddings_by_model=embeddings_by_model,
+                chunks=chunks,
             )
             return {
                 "type": "personal_attribute",
@@ -1816,6 +1816,7 @@ class VectorDatabase:
                 content=new_content,
                 recreate_embeddings=True,
                 embeddings_by_model=embeddings_by_model,
+                chunks=chunks,
             )
             return {"type": "document", "id": document["id"]}
 
@@ -1866,10 +1867,13 @@ class VectorDatabase:
         profile_data_id: str | None = None,
         personal_attribute_id: str | None = None,
         embeddings_by_model: dict[str, List[List[float]]] | None = None,
+        chunks: List[str] | None = None,
     ) -> bool:
         """Apply a confirmed update after user approval"""
         if embeddings_by_model is None:
             raise ValueError("embeddings_by_model is required for apply_confirmed_update")
+        if chunks is None:
+            raise ValueError("chunks is required for apply_confirmed_update")
 
         if article_id:
             await self.update_article(
@@ -1877,6 +1881,7 @@ class VectorDatabase:
                 content=new_content,
                 recreate_embeddings=True,
                 embeddings_by_model=embeddings_by_model,
+                chunks=chunks,
             )
         elif profile_data_id:
             profile = self.get_profile_data(profile_data_id)
@@ -1887,6 +1892,7 @@ class VectorDatabase:
                     data=updated_data,
                     recreate_embeddings=True,
                     embeddings_by_model=embeddings_by_model,
+                    chunks=chunks,
                 )
         elif personal_attribute_id:
             await self.update_personal_attribute(
@@ -1894,6 +1900,7 @@ class VectorDatabase:
                 description=new_content,
                 recreate_embeddings=True,
                 embeddings_by_model=embeddings_by_model,
+                chunks=chunks,
             )
         else:
             await self.update_document(
@@ -1901,6 +1908,7 @@ class VectorDatabase:
                 content=new_content,
                 recreate_embeddings=True,
                 embeddings_by_model=embeddings_by_model,
+                chunks=chunks,
             )
 
         return True
@@ -1908,27 +1916,6 @@ class VectorDatabase:
     # ========================================================================
     # HELPER METHODS
     # ========================================================================
-
-    def chunk_text(self, text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]:
-        """Public chunking helper to align embeddings with database inserts."""
-        return self._chunk_text(text, chunk_size, overlap)
-
-    def _chunk_text(
-        self, text: str, chunk_size: int = 500, overlap: int = 50
-    ) -> List[str]:
-        """Split text into overlapping chunks"""
-        words = text.split()
-
-        if len(words) <= chunk_size:
-            return [text]
-
-        chunks = []
-        for i in range(0, len(words), chunk_size - overlap):
-            chunk = " ".join(words[i : i + chunk_size])
-            if chunk:
-                chunks.append(chunk)
-
-        return chunks
 
     def _flatten_dict_to_text(self, data: dict[str, Any]) -> str:
         """Convert dictionary to searchable text"""
