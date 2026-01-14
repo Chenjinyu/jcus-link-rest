@@ -29,6 +29,161 @@ from src.schemas import ResumeMatch
 logger = logging.getLogger(__name__)
 
 
+_SIMULATED_RESUME_PARTS = [
+    "# Professional Resume\n\n",
+    "## Professional Summary\n",
+    "Experienced software engineer with strong background in Python, TypeScript, and cloud technologies. ",
+    "Proven track record of building scalable applications and leading development teams.\n\n",
+    "## Key Skills\n",
+    "- **Programming Languages:** Python, TypeScript, JavaScript\n",
+    "- **Frameworks:** FastAPI, React, Node.js\n",
+    "- **Cloud Platforms:** AWS, GCP\n",
+    "- **Tools:** Docker, Kubernetes, Git\n\n",
+    "## Work Experience\n\n",
+    "### Senior Software Engineer | Tech Company\n",
+    "*2020 - Present*\n\n",
+    "- Developed microservices architecture serving 1M+ users\n",
+    "- Led team of 5 engineers in implementing CI/CD pipeline\n",
+    "- Reduced deployment time by 60% through automation\n\n",
+    "## Education\n",
+    "**Bachelor of Science in Computer Science**\n",
+    "University Name, 2018\n\n",
+    "## Achievements\n",
+    "- Architected system handling 10K requests/second\n",
+    "- Published 3 technical articles on Medium\n",
+    "- Contributed to 5+ open source projects\n",
+]
+
+
+def _default_analysis_result() -> dict:
+    return {
+        "required_skills": ["Python", "FastAPI", "React", "AWS"],
+        "experience_level": "Senior",
+        "key_responsibilities": [
+            "Design and implement scalable systems",
+            "Lead technical projects",
+            "Mentor junior developers",
+        ],
+        "estimated_match_threshold": 0.7,
+    }
+
+
+async def _stream_simulated_resume() -> AsyncIterator[str]:
+    for part in _SIMULATED_RESUME_PARTS:
+        await asyncio.sleep(0.1)
+        yield part
+
+
+def _ensure_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value if item]
+    return [str(value)]
+
+
+def _format_date_range(entry: dict[str, Any]) -> str:
+    start = entry.get("start_date")
+    end = entry.get("end_date")
+    is_current = entry.get("is_current")
+    if start and (end or is_current):
+        return f"{start} - {end or 'Present'}"
+    if start:
+        return str(start)
+    return ""
+
+
+def _render_resume_from_source(resume_source: dict[str, Any]) -> str:
+    profile_data = resume_source.get("profile_data", []) or []
+    personal_attributes = resume_source.get("personal_attributes", []) or []
+
+    sections: list[str] = ["# Resume\n"]
+
+    summary_items = [
+        attr
+        for attr in personal_attributes
+        if attr.get("attribute_type") in {"summary", "bio", "headline"}
+    ]
+    if summary_items:
+        sections.append("## Professional Summary\n")
+        for item in summary_items:
+            description = item.get("description") or item.get("value")
+            if description:
+                sections.append(f"- {description}\n")
+        sections.append("\n")
+
+    skills: list[str] = []
+    for entry in profile_data:
+        if entry.get("category") == "skill":
+            data = entry.get("data") or {}
+            skills.extend(_ensure_list(data.get("skills") or data.get("name")))
+    if skills:
+        unique_skills = sorted({skill for skill in skills if skill})
+        sections.append("## Key Skills\n")
+        sections.append("- " + ", ".join(unique_skills) + "\n\n")
+
+    work_items = [entry for entry in profile_data if entry.get("category") == "work_experience"]
+    if work_items:
+        sections.append("## Work Experience\n")
+        for entry in work_items:
+            data = entry.get("data") or {}
+            title = data.get("title") or data.get("position") or data.get("role")
+            company = data.get("company") or data.get("organization")
+            header = " | ".join([part for part in [title, company] if part])
+            if header:
+                sections.append(f"### {header}\n")
+            date_range = _format_date_range(entry)
+            if date_range:
+                sections.append(f"*{date_range}*\n")
+            details: list[str] = []
+            details.extend(_ensure_list(data.get("description")))
+            details.extend(_ensure_list(data.get("responsibilities")))
+            details.extend(_ensure_list(data.get("achievements")))
+            if details:
+                for detail in details:
+                    sections.append(f"- {detail}\n")
+            sections.append("\n")
+
+    education_items = [entry for entry in profile_data if entry.get("category") == "education"]
+    if education_items:
+        sections.append("## Education\n")
+        for entry in education_items:
+            data = entry.get("data") or {}
+            degree = data.get("degree") or data.get("title")
+            institution = data.get("institution") or data.get("school")
+            line = " | ".join([part for part in [degree, institution] if part])
+            if line:
+                sections.append(f"- {line}\n")
+        sections.append("\n")
+
+    cert_items = [entry for entry in profile_data if entry.get("category") == "certification"]
+    if cert_items:
+        sections.append("## Certifications\n")
+        for entry in cert_items:
+            data = entry.get("data") or {}
+            name = data.get("name") or data.get("title")
+            issuer = data.get("issuer")
+            line = " | ".join([part for part in [name, issuer] if part])
+            if line:
+                sections.append(f"- {line}\n")
+        sections.append("\n")
+
+    project_items = [entry for entry in profile_data if entry.get("category") == "project"]
+    if project_items:
+        sections.append("## Projects\n")
+        for entry in project_items:
+            data = entry.get("data") or {}
+            title = data.get("title") or data.get("name")
+            if title:
+                sections.append(f"### {title}\n")
+            details = _ensure_list(data.get("description"))
+            for detail in details:
+                sections.append(f"- {detail}\n")
+            sections.append("\n")
+
+    return "".join(sections).rstrip() + "\n"
+
+
 class EmbeddingProvider(Protocol):
     async def create_embedding(self, text: str, model: EmbeddingModel) -> list[float]:
         ...
@@ -185,122 +340,49 @@ async def create_embedding(
     return await get_embedding_provider().create_embedding(text, model)
 
 
-def _ensure_list(value: Any) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return [str(item) for item in value if item]
-    return [str(value)]
-
-
-def _format_date_range(entry: dict[str, Any]) -> str:
-    start = entry.get("start_date")
-    end = entry.get("end_date")
-    is_current = entry.get("is_current")
-    if start and (end or is_current):
-        return f"{start} - {end or 'Present'}"
-    if start:
-        return str(start)
-    return ""
-
-
-def _render_resume_from_source(resume_source: dict[str, Any]) -> str:
-    profile_data = resume_source.get("profile_data", []) or []
-    personal_attributes = resume_source.get("personal_attributes", []) or []
-
-    sections: list[str] = ["# Resume\n"]
-
-    summary_items = [
-        attr
-        for attr in personal_attributes
-        if attr.get("attribute_type") in {"summary", "bio", "headline"}
-    ]
-    if summary_items:
-        sections.append("## Professional Summary\n")
-        for item in summary_items:
-            description = item.get("description") or item.get("value")
-            if description:
-                sections.append(f"- {description}\n")
-        sections.append("\n")
-
-    skills: list[str] = []
-    for entry in profile_data:
-        if entry.get("category") == "skill":
-            data = entry.get("data") or {}
-            skills.extend(_ensure_list(data.get("skills") or data.get("name")))
-    if skills:
-        unique_skills = sorted({skill for skill in skills if skill})
-        sections.append("## Key Skills\n")
-        sections.append("- " + ", ".join(unique_skills) + "\n\n")
-
-    work_items = [entry for entry in profile_data if entry.get("category") == "work_experience"]
-    if work_items:
-        sections.append("## Work Experience\n")
-        for entry in work_items:
-            data = entry.get("data") or {}
-            title = data.get("title") or data.get("position") or data.get("role")
-            company = data.get("company") or data.get("organization")
-            header = " | ".join([part for part in [title, company] if part])
-            if header:
-                sections.append(f"### {header}\n")
-            date_range = _format_date_range(entry)
-            if date_range:
-                sections.append(f"*{date_range}*\n")
-            details: list[str] = []
-            details.extend(_ensure_list(data.get("description")))
-            details.extend(_ensure_list(data.get("responsibilities")))
-            details.extend(_ensure_list(data.get("achievements")))
-            if details:
-                for detail in details:
-                    sections.append(f"- {detail}\n")
-            sections.append("\n")
-
-    education_items = [entry for entry in profile_data if entry.get("category") == "education"]
-    if education_items:
-        sections.append("## Education\n")
-        for entry in education_items:
-            data = entry.get("data") or {}
-            degree = data.get("degree") or data.get("title")
-            institution = data.get("institution") or data.get("school")
-            line = " | ".join([part for part in [degree, institution] if part])
-            if line:
-                sections.append(f"- {line}\n")
-        sections.append("\n")
-
-    cert_items = [entry for entry in profile_data if entry.get("category") == "certification"]
-    if cert_items:
-        sections.append("## Certifications\n")
-        for entry in cert_items:
-            data = entry.get("data") or {}
-            name = data.get("name") or data.get("title")
-            issuer = data.get("issuer")
-            line = " | ".join([part for part in [name, issuer] if part])
-            if line:
-                sections.append(f"- {line}\n")
-        sections.append("\n")
-
-    project_items = [entry for entry in profile_data if entry.get("category") == "project"]
-    if project_items:
-        sections.append("## Projects\n")
-        for entry in project_items:
-            data = entry.get("data") or {}
-            title = data.get("title") or data.get("name")
-            if title:
-                sections.append(f"### {title}\n")
-            details = _ensure_list(data.get("description"))
-            for detail in details:
-                sections.append(f"- {detail}\n")
-            sections.append("\n")
-
-    return "".join(sections).rstrip() + "\n"
-
-
 class BaseLLMService(ABC):
     """
     Abstract base class for LLM services by following the dependency inversion principle,
     depending on abstractions rather than concrete implementations."""
 
+    async def _yield_prompt(self, prompt: str, stream: bool) -> AsyncIterator[str]:
+        if stream:
+            async for chunk in self._stream_generate(prompt):
+                yield chunk
+        else:
+            yield await self._generate(prompt)
+
+    async def _analyze_prompt(self, prompt: str) -> None:
+        _ = prompt
+
+    def _use_rendered_source(self) -> bool:
+        return False
+
+    def _handle_analysis_error(self, exc: Exception) -> None:
+        raise LLMServiceException("text analysis", str(exc))
+
+    async def _handle_resume_error(self, exc: Exception) -> AsyncIterator[str]:
+        raise LLMServiceException("resume generation", str(exc))
+        if False:
+            yield ""
+
+    async def _handle_resume_source_error(
+        self,
+        exc: Exception,
+        resume_source: dict[str, Any],
+    ) -> AsyncIterator[str]:
+        raise LLMServiceException("resume generation", str(exc))
+        if False:
+            yield ""
+
     @abstractmethod
+    async def _stream_generate(self, prompt: str) -> AsyncIterator[str]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def _generate(self, prompt: str) -> str:
+        raise NotImplementedError
+
     async def generate_resume(
         self,
         job_description: str,
@@ -308,14 +390,23 @@ class BaseLLMService(ABC):
         stream: bool = True,
     ) -> AsyncGenerator[str, None]:
         """Generate resume based on job description and matches"""
-        raise NotImplementedError
+        prompt = build_resume_prompt(job_description, matched_resumes)
+        try:
+            async for chunk in self._yield_prompt(prompt, stream):
+                yield chunk
+        except Exception as exc:
+            async for chunk in self._handle_resume_error(exc):
+                yield chunk
 
-    @abstractmethod
     async def analyze_text(self, text: str) -> dict:
         """Analyze text and extract structured information"""
-        raise NotImplementedError
+        prompt = build_analysis_prompt(text)
+        try:
+            await self._analyze_prompt(prompt)
+        except Exception as exc:
+            self._handle_analysis_error(exc)
+        return _default_analysis_result()
 
-    @abstractmethod
     async def generate_resume_from_source(
         self,
         job_description: str,
@@ -324,7 +415,21 @@ class BaseLLMService(ABC):
         stream: bool = True,
     ) -> AsyncGenerator[str, None]:
         """Generate resume using structured source data"""
-        raise NotImplementedError
+        if self._use_rendered_source():
+            yield _render_resume_from_source(resume_source)
+            return
+
+        prompt = build_resume_from_source_prompt(
+            job_description,
+            resume_source,
+            match_summary,
+        )
+        try:
+            async for chunk in self._yield_prompt(prompt, stream):
+                yield chunk
+        except Exception as exc:
+            async for chunk in self._handle_resume_source_error(exc, resume_source):
+                yield chunk
 
 
 LLMServiceFactoryCallable = Callable[
@@ -367,116 +472,17 @@ class GoogleLLMService(BaseLLMService):
         if not self.api_key:
             logger.warning("Google API key not set, using simulated responses")
 
-    async def generate_resume(
-        self,
-        job_description: str,
-        matched_resumes: List[ResumeMatch],
-        stream: bool = True,
-    ) -> AsyncGenerator[str, None]:
-        """Generate optimized resume using Google Gemini"""
-
-        try:
-            prompt = build_resume_prompt(job_description, matched_resumes)
-
-            if stream:
-                async for chunk in self._stream_generate(prompt):
-                    yield chunk
-            else:
-                result = await self._generate(prompt)
-                yield result
-
-        except Exception as e:
-            logger.error("Resume generation failed: %s", e)
-            raise LLMServiceException("resume generation", str(e))
-
-    async def analyze_text(self, text: str) -> dict:
-        """Analyze job description using Google Gemini"""
-
-        try:
-            prompt = build_analysis_prompt(text)
-            _ = prompt
-
-            return {
-                "required_skills": ["Python", "FastAPI", "React", "AWS"],
-                "experience_level": "Senior",
-                "key_responsibilities": [
-                    "Design and implement scalable systems",
-                    "Lead technical projects",
-                    "Mentor junior developers",
-                ],
-                "estimated_match_threshold": 0.7,
-            }
-
-        except Exception as e:
-            logger.error("Text analysis failed: %s", e)
-            raise LLMServiceException("text analysis", str(e))
-
-    async def generate_resume_from_source(
-        self,
-        job_description: str,
-        resume_source: dict[str, Any],
-        match_summary: dict[str, Any],
-        stream: bool = True,
-    ) -> AsyncGenerator[str, None]:
-        try:
-            if not self.api_key:
-                yield _render_resume_from_source(resume_source)
-                return
-
-            prompt = build_resume_from_source_prompt(
-                job_description,
-                resume_source,
-                match_summary,
-            )
-            if stream:
-                async for chunk in self._stream_generate(prompt):
-                    yield chunk
-            else:
-                result = await self._generate(prompt)
-                yield result
-        except Exception as e:
-            logger.error("Resume generation failed: %s", e)
-            raise LLMServiceException("resume generation", str(e))
+    def _use_rendered_source(self) -> bool:
+        return not self.api_key
 
     async def _stream_generate(self, prompt: str) -> AsyncIterator[str]:
         """Stream LLM response (simulated for now)"""
-
-        if self.api_key:
-            _ = prompt
-            pass
-
-        resume_parts = [
-            "# Professional Resume\n\n",
-            "## Professional Summary\n",
-            "Experienced software engineer with strong background in Python, TypeScript, and cloud technologies. ",
-            "Proven track record of building scalable applications and leading development teams.\n\n",
-            "## Key Skills\n",
-            "- **Programming Languages:** Python, TypeScript, JavaScript\n",
-            "- **Frameworks:** FastAPI, React, Node.js\n",
-            "- **Cloud Platforms:** AWS, GCP\n",
-            "- **Tools:** Docker, Kubernetes, Git\n\n",
-            "## Work Experience\n\n",
-            "### Senior Software Engineer | Tech Company\n",
-            "*2020 - Present*\n\n",
-            "- Developed microservices architecture serving 1M+ users\n",
-            "- Led team of 5 engineers in implementing CI/CD pipeline\n",
-            "- Reduced deployment time by 60% through automation\n\n",
-            "## Education\n",
-            "**Bachelor of Science in Computer Science**\n",
-            "University Name, 2018\n\n",
-            "## Achievements\n",
-            "- Architected system handling 10K requests/second\n",
-            "- Published 3 technical articles on Medium\n",
-            "- Contributed to 5+ open source projects\n",
-        ]
-
-        for part in resume_parts:
-            await asyncio.sleep(0.1)
-            yield part
+        _ = prompt
+        async for chunk in _stream_simulated_resume():
+            yield chunk
 
     async def _generate(self, prompt: str) -> str:
         """Generate complete response"""
-
         result = []
         async for chunk in self._stream_generate(prompt):
             result.append(chunk)
@@ -503,109 +509,14 @@ class OpenAILLMService(BaseLLMService):
         if not self.api_key:
             logger.warning("OpenAI API key not set, using simulated responses")
 
-    async def generate_resume(
-        self,
-        job_description: str,
-        matched_resumes: List[ResumeMatch],
-        stream: bool = True,
-    ) -> AsyncGenerator[str, None]:
-        """Generate resume using OpenAI"""
-        try:
-            prompt = build_resume_prompt(job_description, matched_resumes)
-
-            if stream:
-                async for chunk in self._stream_generate(prompt):
-                    yield chunk
-            else:
-                result = await self._generate(prompt)
-                yield result
-
-        except Exception as e:
-            logger.error("Resume generation failed: %s", e)
-            raise LLMServiceException("resume generation", str(e))
-
-    async def analyze_text(self, text: str) -> dict:
-        """Analyze text using OpenAI"""
-        try:
-            prompt = build_analysis_prompt(text)
-            _ = prompt
-
-            return {
-                "required_skills": ["Python", "FastAPI", "React", "AWS"],
-                "experience_level": "Senior",
-                "key_responsibilities": [
-                    "Design and implement scalable systems",
-                    "Lead technical projects",
-                    "Mentor junior developers",
-                ],
-                "estimated_match_threshold": 0.7,
-            }
-
-        except Exception as e:
-            logger.error("Text analysis failed: %s", e)
-            raise LLMServiceException("text analysis", str(e))
-
-    async def generate_resume_from_source(
-        self,
-        job_description: str,
-        resume_source: dict[str, Any],
-        match_summary: dict[str, Any],
-        stream: bool = True,
-    ) -> AsyncGenerator[str, None]:
-        try:
-            if not self.api_key:
-                yield _render_resume_from_source(resume_source)
-                return
-
-            prompt = build_resume_from_source_prompt(
-                job_description,
-                resume_source,
-                match_summary,
-            )
-            if stream:
-                async for chunk in self._stream_generate(prompt):
-                    yield chunk
-            else:
-                result = await self._generate(prompt)
-                yield result
-        except Exception as e:
-            logger.error("Resume generation failed: %s", e)
-            raise LLMServiceException("resume generation", str(e))
+    def _use_rendered_source(self) -> bool:
+        return not self.api_key
 
     async def _stream_generate(self, prompt: str) -> AsyncIterator[str]:
         """Stream LLM response (simulated for now)"""
-        if self.api_key:
-            _ = prompt
-            pass
-
-        resume_parts = [
-            "# Professional Resume\n\n",
-            "## Professional Summary\n",
-            "Experienced software engineer with strong background in Python, TypeScript, and cloud technologies. ",
-            "Proven track record of building scalable applications and leading development teams.\n\n",
-            "## Key Skills\n",
-            "- **Programming Languages:** Python, TypeScript, JavaScript\n",
-            "- **Frameworks:** FastAPI, React, Node.js\n",
-            "- **Cloud Platforms:** AWS, GCP\n",
-            "- **Tools:** Docker, Kubernetes, Git\n\n",
-            "## Work Experience\n\n",
-            "### Senior Software Engineer | Tech Company\n",
-            "*2020 - Present*\n\n",
-            "- Developed microservices architecture serving 1M+ users\n",
-            "- Led team of 5 engineers in implementing CI/CD pipeline\n",
-            "- Reduced deployment time by 60% through automation\n\n",
-            "## Education\n",
-            "**Bachelor of Science in Computer Science**\n",
-            "University Name, 2018\n\n",
-            "## Achievements\n",
-            "- Architected system handling 10K requests/second\n",
-            "- Published 3 technical articles on Medium\n",
-            "- Contributed to 5+ open source projects\n",
-        ]
-
-        for part in resume_parts:
-            await asyncio.sleep(0.1)
-            yield part
+        _ = prompt
+        async for chunk in _stream_simulated_resume():
+            yield chunk
 
     async def _generate(self, prompt: str) -> str:
         """Generate complete response"""
@@ -631,68 +542,25 @@ class OllamaLLMService(BaseLLMService):
         self.max_tokens = 4096
         self.temperature = 0.7
 
-    async def generate_resume(
+    async def _analyze_prompt(self, prompt: str) -> None:
+        result = await self._generate(prompt)
+        _ = result
+
+    def _handle_analysis_error(self, exc: Exception) -> None:
+        logger.warning("Ollama unavailable, using simulated responses: %s", exc)
+
+    async def _handle_resume_error(self, exc: Exception) -> AsyncIterator[str]:
+        logger.warning("Ollama unavailable, using simulated responses: %s", exc)
+        async for chunk in _stream_simulated_resume():
+            yield chunk
+
+    async def _handle_resume_source_error(
         self,
-        job_description: str,
-        matched_resumes: List[ResumeMatch],
-        stream: bool = True,
-    ) -> AsyncGenerator[str, None]:
-        """Generate resume using Ollama"""
-        try:
-            prompt = build_resume_prompt(job_description, matched_resumes)
-            if stream:
-                async for chunk in self._stream_generate(prompt):
-                    yield chunk
-            else:
-                result = await self._generate(prompt)
-                yield result
-        except Exception as e:
-            logger.warning("Ollama unavailable, using simulated responses: %s", e)
-            async for chunk in self._simulate_resume():
-                yield chunk
-
-    async def analyze_text(self, text: str) -> dict:
-        """Analyze text using Ollama"""
-        try:
-            prompt = build_analysis_prompt(text)
-            result = await self._generate(prompt)
-            _ = result
-        except Exception as e:
-            logger.warning("Ollama unavailable, using simulated responses: %s", e)
-
-        return {
-            "required_skills": ["Python", "FastAPI", "React", "AWS"],
-            "experience_level": "Senior",
-            "key_responsibilities": [
-                "Design and implement scalable systems",
-                "Lead technical projects",
-                "Mentor junior developers",
-            ],
-            "estimated_match_threshold": 0.7,
-        }
-
-    async def generate_resume_from_source(
-        self,
-        job_description: str,
+        exc: Exception,
         resume_source: dict[str, Any],
-        match_summary: dict[str, Any],
-        stream: bool = True,
-    ) -> AsyncGenerator[str, None]:
-        try:
-            prompt = build_resume_from_source_prompt(
-                job_description,
-                resume_source,
-                match_summary,
-            )
-            if stream:
-                async for chunk in self._stream_generate(prompt):
-                    yield chunk
-            else:
-                result = await self._generate(prompt)
-                yield result
-        except Exception as e:
-            logger.warning("Ollama unavailable, using simulated responses: %s", e)
-            yield _render_resume_from_source(resume_source)
+    ) -> AsyncIterator[str]:
+        logger.warning("Ollama unavailable, using simulated responses: %s", exc)
+        yield _render_resume_from_source(resume_source)
 
     async def _stream_generate(self, prompt: str) -> AsyncIterator[str]:
         payload = {
@@ -733,36 +601,6 @@ class OllamaLLMService(BaseLLMService):
             response.raise_for_status()
             data = response.json()
             return data.get("response", "")
-
-    async def _simulate_resume(self) -> AsyncIterator[str]:
-        resume_parts = [
-            "# Professional Resume\n\n",
-            "## Professional Summary\n",
-            "Experienced software engineer with strong background in Python, TypeScript, and cloud technologies. ",
-            "Proven track record of building scalable applications and leading development teams.\n\n",
-            "## Key Skills\n",
-            "- **Programming Languages:** Python, TypeScript, JavaScript\n",
-            "- **Frameworks:** FastAPI, React, Node.js\n",
-            "- **Cloud Platforms:** AWS, GCP\n",
-            "- **Tools:** Docker, Kubernetes, Git\n\n",
-            "## Work Experience\n\n",
-            "### Senior Software Engineer | Tech Company\n",
-            "*2020 - Present*\n\n",
-            "- Developed microservices architecture serving 1M+ users\n",
-            "- Led team of 5 engineers in implementing CI/CD pipeline\n",
-            "- Reduced deployment time by 60% through automation\n\n",
-            "## Education\n",
-            "**Bachelor of Science in Computer Science**\n",
-            "University Name, 2018\n\n",
-            "## Achievements\n",
-            "- Architected system handling 10K requests/second\n",
-            "- Published 3 technical articles on Medium\n",
-            "- Contributed to 5+ open source projects\n",
-        ]
-
-        for part in resume_parts:
-            await asyncio.sleep(0.1)
-            yield part
 
 
 class LLMServiceFactory:
