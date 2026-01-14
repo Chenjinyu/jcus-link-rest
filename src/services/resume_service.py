@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, List, AsyncIterator, cast
 from collections.abc import AsyncGenerator
 
@@ -283,8 +283,9 @@ class ResumeService:
                 resume_text=resume_text,
                 summary=match_summary.summary,
                 match_rate=match_summary.match_rate,
-                created_at=datetime.utcnow(),
-                expires_at=datetime.utcnow() + timedelta(seconds=settings.resume_cache_ttl_seconds),
+                created_at=datetime.now(timezone.utc),
+                expires_at=datetime.now(timezone.utc)
+                + timedelta(seconds=settings.resume_cache_ttl_seconds),
                 metadata={
                     "profile_fingerprint": profile_fingerprint,
                     "user_id": resolved_user_id,
@@ -358,8 +359,9 @@ class ResumeService:
                 resume_text=resume_text,
                 summary=match_summary.summary,
                 match_rate=match_summary.match_rate,
-                created_at=datetime.utcnow(),
-                expires_at=datetime.utcnow() + timedelta(seconds=settings.resume_cache_ttl_seconds),
+                created_at=datetime.now(timezone.utc),
+                expires_at=datetime.now(timezone.utc)
+                + timedelta(seconds=settings.resume_cache_ttl_seconds),
                 metadata={
                     "profile_fingerprint": profile_fingerprint,
                     "user_id": resolved_user_id,

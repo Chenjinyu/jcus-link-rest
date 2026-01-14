@@ -5,7 +5,6 @@ llm_service.py init ai model and use it to call supabase.
 vector_database.py gets ai embedding models from supabase database, init the ai model and call vectors from supabase.
 """
 
-import asyncio
 import json
 import logging
 from abc import ABC, abstractmethod
@@ -29,32 +28,6 @@ from src.schemas import ResumeMatch
 logger = logging.getLogger(__name__)
 
 
-_SIMULATED_RESUME_PARTS = [
-    "# Professional Resume\n\n",
-    "## Professional Summary\n",
-    "Experienced software engineer with strong background in Python, TypeScript, and cloud technologies. ",
-    "Proven track record of building scalable applications and leading development teams.\n\n",
-    "## Key Skills\n",
-    "- **Programming Languages:** Python, TypeScript, JavaScript\n",
-    "- **Frameworks:** FastAPI, React, Node.js\n",
-    "- **Cloud Platforms:** AWS, GCP\n",
-    "- **Tools:** Docker, Kubernetes, Git\n\n",
-    "## Work Experience\n\n",
-    "### Senior Software Engineer | Tech Company\n",
-    "*2020 - Present*\n\n",
-    "- Developed microservices architecture serving 1M+ users\n",
-    "- Led team of 5 engineers in implementing CI/CD pipeline\n",
-    "- Reduced deployment time by 60% through automation\n\n",
-    "## Education\n",
-    "**Bachelor of Science in Computer Science**\n",
-    "University Name, 2018\n\n",
-    "## Achievements\n",
-    "- Architected system handling 10K requests/second\n",
-    "- Published 3 technical articles on Medium\n",
-    "- Contributed to 5+ open source projects\n",
-]
-
-
 def _default_analysis_result() -> dict:
     return {
         "required_skills": ["Python", "FastAPI", "React", "AWS"],
@@ -68,10 +41,19 @@ def _default_analysis_result() -> dict:
     }
 
 
-async def _stream_simulated_resume() -> AsyncIterator[str]:
-    for part in _SIMULATED_RESUME_PARTS:
-        await asyncio.sleep(0.1)
-        yield part
+def _parse_analysis_response(response: str | None) -> dict:
+    if not response:
+        return _default_analysis_result()
+    raw = response.strip()
+    if "{" in raw and "}" in raw:
+        raw = raw[raw.find("{") : raw.rfind("}") + 1]
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return _default_analysis_result()
+    if not isinstance(data, dict):
+        return _default_analysis_result()
+    return data
 
 
 def _ensure_list(value: Any) -> list[str]:
@@ -231,6 +213,15 @@ def get_default_embedding_model(provider: str) -> EmbeddingModel | None:
     return models[0] if models else None
 
 
+def get_default_generation_model(provider: str) -> EmbeddingModel | None:
+    models = [
+        model
+        for model in get_embedding_models(provider)
+        if model.dimensions <= 0
+    ]
+    return models[0] if models else None
+
+
 class SupabaseEmbeddingProvider:
     def __init__(
         self,
@@ -345,16 +336,6 @@ class BaseLLMService(ABC):
     Abstract base class for LLM services by following the dependency inversion principle,
     depending on abstractions rather than concrete implementations."""
 
-    async def _yield_prompt(self, prompt: str, stream: bool) -> AsyncIterator[str]:
-        if stream:
-            async for chunk in self._stream_generate(prompt):
-                yield chunk
-        else:
-            yield await self._generate(prompt)
-
-    async def _analyze_prompt(self, prompt: str) -> None:
-        _ = prompt
-
     def _use_rendered_source(self) -> bool:
         return False
 
@@ -383,6 +364,13 @@ class BaseLLMService(ABC):
     async def _generate(self, prompt: str) -> str:
         raise NotImplementedError
 
+    async def _yield_prompt(self, prompt: str, stream: bool) -> AsyncIterator[str]:
+        if stream:
+            async for chunk in self._stream_generate(prompt):
+                yield chunk
+        else:
+            yield await self._generate(prompt)
+
     async def generate_resume(
         self,
         job_description: str,
@@ -402,10 +390,11 @@ class BaseLLMService(ABC):
         """Analyze text and extract structured information"""
         prompt = build_analysis_prompt(text)
         try:
-            await self._analyze_prompt(prompt)
+            response = await self._generate(prompt)
         except Exception as exc:
             self._handle_analysis_error(exc)
-        return _default_analysis_result()
+            return _default_analysis_result()
+        return _parse_analysis_response(response)
 
     async def generate_resume_from_source(
         self,
@@ -457,36 +446,37 @@ class GoogleLLMService(BaseLLMService):
 
     def __init__(self):
         self.api_key = settings.google_api_key
-        self.embedding_model = get_default_embedding_model("google")
+        generation_model = get_default_generation_model("google")
         self.model = (
-            self.embedding_model.model_identifier
-            if self.embedding_model
-            else "text-embedding-004"
-        )
-        self.embedding_dimensions = (
-            self.embedding_model.dimensions if self.embedding_model else None
+            generation_model.model_identifier
+            if generation_model and generation_model.model_identifier
+            else settings.google_model
         )
         self.max_tokens = 8192  # Default for Gemini models
         self.temperature = 0.7  # Default temperature
 
         if not self.api_key:
-            logger.warning("Google API key not set, using simulated responses")
+            raise ValueError("Google API key not set")
 
-    def _use_rendered_source(self) -> bool:
-        return not self.api_key
+        self.client = genai.Client(api_key=self.api_key)
 
     async def _stream_generate(self, prompt: str) -> AsyncIterator[str]:
-        """Stream LLM response (simulated for now)"""
-        _ = prompt
-        async for chunk in _stream_simulated_resume():
-            yield chunk
+        response = self.client.models.generate_content_stream(
+            model=self.model,
+            contents=prompt,
+        )
+        for chunk in response:
+            text = getattr(chunk, "text", None)
+            if text:
+                yield text
 
     async def _generate(self, prompt: str) -> str:
-        """Generate complete response"""
-        result = []
-        async for chunk in self._stream_generate(prompt):
-            result.append(chunk)
-        return "".join(result)
+        response = self.client.models.generate_content(
+            model=self.model,
+            contents=prompt,
+        )
+        text = getattr(response, "text", None)
+        return text or ""
 
 
 class OpenAILLMService(BaseLLMService):
@@ -494,36 +484,43 @@ class OpenAILLMService(BaseLLMService):
 
     def __init__(self):
         self.api_key = settings.openai_api_key
-        self.embedding_model = get_default_embedding_model("openai")
+        generation_model = get_default_generation_model("openai")
         self.model = (
-            self.embedding_model.model_identifier
-            if self.embedding_model
-            else "text-embedding-3-small"
-        )
-        self.embedding_dimensions = (
-            self.embedding_model.dimensions if self.embedding_model else None
+            generation_model.model_identifier
+            if generation_model and generation_model.model_identifier
+            else settings.openai_model
         )
         self.max_tokens = 4000  # Default for OpenAI models
         self.temperature = 0.7  # Default temperature
 
         if not self.api_key:
-            logger.warning("OpenAI API key not set, using simulated responses")
+            raise ValueError("OpenAI API key not set")
 
-    def _use_rendered_source(self) -> bool:
-        return not self.api_key
+        self.client = openai.AsyncOpenAI(api_key=self.api_key)
 
     async def _stream_generate(self, prompt: str) -> AsyncIterator[str]:
-        """Stream LLM response (simulated for now)"""
-        _ = prompt
-        async for chunk in _stream_simulated_resume():
-            yield chunk
+        response = await self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
+            stream=True,
+        )
+        async for event in response:
+            delta = event.choices[0].delta
+            content = getattr(delta, "content", None)
+            if content:
+                yield content
 
     async def _generate(self, prompt: str) -> str:
-        """Generate complete response"""
-        result = []
-        async for chunk in self._stream_generate(prompt):
-            result.append(chunk)
-        return "".join(result)
+        response = await self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
+        )
+        message = response.choices[0].message
+        return message.content or ""
 
 
 class OllamaLLMService(BaseLLMService):
@@ -531,43 +528,26 @@ class OllamaLLMService(BaseLLMService):
 
     def __init__(self):
         self.base_url = settings.ollama_url
-        embedding_model = get_default_embedding_model("ollama")
+        generation_model = get_default_generation_model("ollama")
         self.model = (
-            embedding_model.model_identifier
-            if embedding_model and embedding_model.model_identifier
+            generation_model.model_identifier
+            if generation_model and generation_model.model_identifier
             else settings.ollama_model
         )
-        if not embedding_model:
-            logger.warning("No Ollama model in Supabase; using settings fallback.")
+        if not generation_model:
+            logger.warning("No Ollama generation model in Supabase; using settings fallback.")
         self.max_tokens = 4096
         self.temperature = 0.7
-
-    async def _analyze_prompt(self, prompt: str) -> None:
-        result = await self._generate(prompt)
-        _ = result
-
-    def _handle_analysis_error(self, exc: Exception) -> None:
-        logger.warning("Ollama unavailable, using simulated responses: %s", exc)
-
-    async def _handle_resume_error(self, exc: Exception) -> AsyncIterator[str]:
-        logger.warning("Ollama unavailable, using simulated responses: %s", exc)
-        async for chunk in _stream_simulated_resume():
-            yield chunk
-
-    async def _handle_resume_source_error(
-        self,
-        exc: Exception,
-        resume_source: dict[str, Any],
-    ) -> AsyncIterator[str]:
-        logger.warning("Ollama unavailable, using simulated responses: %s", exc)
-        yield _render_resume_from_source(resume_source)
 
     async def _stream_generate(self, prompt: str) -> AsyncIterator[str]:
         payload = {
             "model": self.model,
             "prompt": prompt,
             "stream": True,
-            "options": {"temperature": self.temperature},
+            "options": {
+                "temperature": self.temperature,
+                "num_predict": self.max_tokens,
+            },
         }
         async with httpx.AsyncClient() as client:
             async with client.stream(
@@ -590,7 +570,10 @@ class OllamaLLMService(BaseLLMService):
             "model": self.model,
             "prompt": prompt,
             "stream": False,
-            "options": {"temperature": self.temperature},
+            "options": {
+                "temperature": self.temperature,
+                "num_predict": self.max_tokens,
+            },
         }
         async with httpx.AsyncClient() as client:
             response = await client.post(

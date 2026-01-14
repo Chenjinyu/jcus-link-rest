@@ -6,9 +6,13 @@ from src.services.llm_service import BaseLLMService, OllamaLLMService
 
 
 class DummyLLMService(BaseLLMService):
-    def __init__(self, raise_on_stream: bool = False, raise_on_analyze: bool = False):
+    def __init__(
+        self,
+        raise_on_stream: bool = False,
+        raise_on_generate: bool = False,
+    ):
         self.raise_on_stream = raise_on_stream
-        self.raise_on_analyze = raise_on_analyze
+        self.raise_on_generate = raise_on_generate
         self.stream_calls = 0
         self.generate_calls = 0
         self.handle_analysis_error_called = False
@@ -23,11 +27,9 @@ class DummyLLMService(BaseLLMService):
 
     async def _generate(self, prompt: str) -> str:
         self.generate_calls += 1
+        if self.raise_on_generate:
+            raise RuntimeError("generate failed")
         return "full"
-
-    async def _analyze_prompt(self, prompt: str) -> None:
-        if self.raise_on_analyze:
-            raise RuntimeError("analyze failed")
 
     def _handle_analysis_error(self, exc: Exception) -> None:
         self.handle_analysis_error_called = True
@@ -90,7 +92,7 @@ async def test_generate_resume_from_source_uses_rendered_resume():
 
 @pytest.mark.asyncio
 async def test_analyze_text_returns_default_result():
-    service = DummyLLMService(raise_on_analyze=True)
+    service = DummyLLMService(raise_on_generate=True)
     result = await service.analyze_text("jd")
     assert service.handle_analysis_error_called is True
     assert result == llm_service._default_analysis_result()
@@ -106,6 +108,6 @@ def test_ollama_model_prefers_supabase_embedding(monkeypatch):
         is_local=True,
         cost_per_token=None,
     )
-    monkeypatch.setattr(llm_service, "get_default_embedding_model", lambda provider: model)
+    monkeypatch.setattr(llm_service, "get_default_generation_model", lambda provider: model)
     service = OllamaLLMService()
     assert service.model == "supabase-model"

@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     default_llm_provider: str = "ollama"  # openai, google, ollama. ollama uses local model
     openai_api_key: str | None = None
     google_api_key: str | None = None
+    openai_model: str = "gpt-4o-mini"
+    google_model: str = "gemini-1.5-flash"
     ollama_url: str = "http://localhost:11434"
     ollama_model: str = "llama3"
     
