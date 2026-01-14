@@ -3,6 +3,7 @@
 from .llm_service import (
     BaseLLMService,
     GoogleLLMService,
+    OllamaLLMService,
     OpenAILLMService,
     available_llm_providers,
     get_llm_service,
@@ -14,6 +15,7 @@ from .profile_service import ProfileService, get_profile_service
 __all__ = [
     "BaseLLMService",
     "GoogleLLMService",
+    "OllamaLLMService",
     "OpenAILLMService",
     "available_llm_providers",
     "get_llm_service",

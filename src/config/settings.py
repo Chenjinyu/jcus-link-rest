@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     default_llm_provider: str = "ollama"  # openai, google, ollama. ollama uses local model
     openai_api_key: str | None = None
     google_api_key: str | None = None
+    ollama_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3"
     
     # Rate Limiting
     rate_limit_enabled: bool = True
