@@ -11,7 +11,9 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable # runtime behavior check
 from typing import Any, AsyncGenerator, AsyncIterator, List, Protocol # static type hints
 
+from certifi import contents
 import httpx
+from numpy import isin
 import openai
 from google import genai
 
@@ -167,7 +169,7 @@ def _render_resume_from_source(resume_source: dict[str, Any]) -> str:
 
 
 class EmbeddingProvider(Protocol):
-    async def create_embedding(self, text: str, model: EmbeddingModel) -> list[float]:
+    async def generate_embeddings(self, text: str, model: EmbeddingModel) -> list[float]:
         ...
 
 
@@ -240,17 +242,16 @@ class SupabaseEmbeddingProvider:
         if any(model.provider == "google" for model in models) and google_api_key:
             self._google_client = genai.Client(api_key=google_api_key)
 
-    async def create_embedding(self, text: str, model: EmbeddingModel) -> list[float]:
+    async def generate_embeddings(self, text: str, model: EmbeddingModel) -> list[float]:
+        dimensions = model.dimensions if model.dimensions <= 2000 else None
         if model.provider == "openai":
             if not self._openai_client:
                 raise ValueError("OpenAI client not initialized")
-            dimensions = model.dimensions if model.dimensions <= 2000 else None
             request_params: dict[str, Any] = {
                 "model": model.model_identifier,
+                "dimensions": dimensions,
                 "input": text,
             }
-            if dimensions is not None:
-                request_params["dimensions"] = dimensions
             response = self._openai_client.embeddings.create(**request_params)
             return response.data[0].embedding
         if model.provider == "ollama":
@@ -264,12 +265,20 @@ class SupabaseEmbeddingProvider:
         if model.provider == "google":
             if not self._google_client:
                 raise ValueError("Google client not initialized")
-            result = self._google_client.embed_content(
+            result = self._google_client.models.embed_content(
                 model=model.model_identifier,
-                content=text,
-                task_type="retrieval_document",
+                contents=[text],
+                config={
+                    'output_dimensionality': dimensions
+                },
             )
-            return result["embedding"]
+            embs = getattr(result, "embeddings", None)
+            if not embs:
+                raise ValueError("No embeddings returned from Google API")
+            embs_value = embs.values
+            if isinstance(embs_value, list) and len(embs_value) > 0:
+                return [float(x) for x in embs_value]
+            else: return []
         raise ValueError(f"Provider {model.provider} not supported")
 
 
@@ -544,10 +553,7 @@ class OllamaLLMService(BaseLLMService):
             "model": self.model,
             "prompt": prompt,
             "stream": True,
-            "options": {
-                "temperature": self.temperature,
-                "num_predict": self.max_tokens,
-            },
+            "options": {"temperature": self.temperature},
         }
         async with httpx.AsyncClient() as client:
             async with client.stream(
@@ -570,10 +576,7 @@ class OllamaLLMService(BaseLLMService):
             "model": self.model,
             "prompt": prompt,
             "stream": False,
-            "options": {
-                "temperature": self.temperature,
-                "num_predict": self.max_tokens,
-            },
+            "options": {"temperature": self.temperature},
         }
         async with httpx.AsyncClient() as client:
             response = await client.post(

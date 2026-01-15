@@ -1,4 +1,14 @@
-"""MCP tool registrations for resume matching and generation."""
+"""
+MCP tool registrations for resume matching and generation.
+For questions in the chat window, the Next.js will connect to supabase vector DB
+and complete the conversation.
+
+This module defines tools for:
+- Listing matched job skills from a job description.
+- Generating an updated resume based on a job description.
+- Downloading the latest resume without a job description.
+- Checking resume cache status.
+"""
 
 from __future__ import annotations
 
@@ -29,6 +39,7 @@ async def _extract_job_description(
     input_type: str,
     filename: str | None,
 ) -> str:
+    # init doc parser
     parser = get_document_parser()
 
     if input_type == "url":
@@ -64,11 +75,22 @@ def register_tools(mcp: FastMCP) -> None:
         user_id: str | None = None,
         top_k: int = 10,
         threshold: float = settings.min_similarity_threshold,
-        model_name: str | None = None,
+        embedding_model_name: str | None = None,
         ctx: Context | None = None,
     ) -> str:
         """
         Parse a job description file and return matched chunks with similarity rates.
+        Arguments:
+        - input_data: Base64-encoded file content, URL, or raw text.
+        - input_type: "file", "url", or "text".
+        - filename: Original filename (required for "file" type).
+        - user_id: User identifier for profile data.
+        - top_k: Number of top matches to return.
+        - threshold: Minimum similarity threshold (0.0 to 1.0).
+        - embedding_model_name: Optional LLM model name for embeddings.
+        - ctx: MCP Context for logging.
+        Returns:
+            JSON string with matched chunks and similarity rates.
         """
         try:
             if ctx:
@@ -89,6 +111,8 @@ def register_tools(mcp: FastMCP) -> None:
             if ctx:
                 await ctx.info("Running similarity search against profile data")
 
+            if not embedding_model_name:
+                embedding_model_name = settings.default_embedding_model_name
             try:
                 profile_service = get_profile_service()
             except Exception as exc:
@@ -99,7 +123,7 @@ def register_tools(mcp: FastMCP) -> None:
                 user_id=resolved_user_id,
                 top_k=top_k,
                 threshold=threshold,
-                model_name=model_name,
+                embedding_model_name=embedding_model_name,
             )
 
             match_items = []

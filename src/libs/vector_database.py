@@ -2,7 +2,7 @@
 import json
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Union, Literal
 
 import asyncpg
 from asyncpg.pool import PoolConnectionProxy
@@ -38,7 +38,6 @@ class VectorDatabase:
         self.pg_pool: asyncpg.Pool | None = None
 
         self._models_cache: dict[str, EmbeddingModel] = {}
-        self._models_by_id: dict[str, EmbeddingModel] = {}
         self._load_models()
 
     async def init_pool(self):
@@ -51,54 +50,12 @@ class VectorDatabase:
                 command_timeout=60,
                 statement_cache_size=0,  # Disable prepared statement caching.
             )
-            # Fix profile_data trigger if needed (disable searchable_text assignment)
-            await self._fix_profile_data_trigger()
 
     async def close_pool(self):
         """Close PostgreSQL connection pool."""
         if self.pg_pool:
             await self.pg_pool.close()
             self.pg_pool = None
-
-    async def _fix_profile_data_trigger(self):
-        """
-        Fix profile_data trigger to not set searchable_text (column doesn't exist).
-        This is a one-time fix that runs when pool is initialized.
-        Note: DDL statements (DROP, CREATE) don't require a transaction.
-        """
-        if not self.pg_pool:
-            return  # Pool not initialized, skip trigger fix
-
-        try:
-            # Acquire a connection from the pool (DDL statements auto-commit)
-            async with self.pg_pool.acquire() as conn:
-                # Drop and recreate trigger function as no-op
-                await conn.execute("""
-                    DROP TRIGGER IF EXISTS update_profile_data_searchable_text_trigger ON profile_data;
-                    DROP FUNCTION IF EXISTS update_profile_data_searchable_text();
-                    
-                    CREATE OR REPLACE FUNCTION update_profile_data_searchable_text()
-                    RETURNS TRIGGER
-                    LANGUAGE plpgsql
-                    SET search_path = public
-                    AS $$
-                    BEGIN
-                      -- No-op: searchable_text is generated in Python, not by trigger
-                      RETURN NEW;
-                    END;
-                    $$;
-                    
-                    CREATE TRIGGER update_profile_data_searchable_text_trigger
-                      BEFORE INSERT OR UPDATE ON profile_data
-                      FOR EACH ROW
-                      EXECUTE FUNCTION update_profile_data_searchable_text();
-                """)
-        except Exception as e:
-            # If trigger fix fails, log but don't fail initialization
-            print(f"Warning: Could not fix profile_data trigger: {e}")
-            print(
-                "You may need to run the SQL migration manually: db_migration/supabase/fix_profile_data_trigger.sql"
-            )
 
     def _parse_date(self, date_value: Union[str, date] | None) -> date | None:
         """
@@ -126,10 +83,6 @@ class VectorDatabase:
                     raise ValueError(
                         f"Invalid date format: {date_value}. Expected 'YYYY-MM-DD' or 'YYYY/MM/DD'"
                     )
-                    
-        raise TypeError(
-            f"date_value must be str, date, or None, got {type(date_value)}"
-        )
 
     def _generate_searchable_text_from_profile_data(self, data: dict[str, Any]) -> str:
         """
@@ -224,16 +177,12 @@ class VectorDatabase:
                 is_local=bool(model_data.get("is_local", False)),
                 cost_per_token=_safe_float(model_data.get("cost_per_token")),
             )
-            self._models_by_id[model_id] = self._models_cache[
-                model_name
-            ]
-        print("--" * 20)
-        print(self._models_cache)
 
     def list_embedding_models(self, provider: str | None = None) -> List[EmbeddingModel]:
         """Return active embedding models, optionally filtered by provider."""
         if provider is None:
-            return list(self._models_cache.values())
+            raise ValueError("provider is required")
+        
         normalized = provider.strip().lower()
         return [
             model
@@ -244,10 +193,6 @@ class VectorDatabase:
     def get_embedding_model(self, name: str) -> EmbeddingModel | None:
         """Get an embedding model by name."""
         return self._models_cache.get(name)
-
-    def get_embedding_model_by_id(self, model_id: str) -> EmbeddingModel | None:
-        """Get an embedding model by ID."""
-        return self._models_by_id.get(model_id)
 
     # ========================================================================
     # DOCUMENT OPERATIONS
@@ -297,14 +242,6 @@ class VectorDatabase:
                     chunk_index,
                     total_chunks,
                 )
-
-    def _get_model_names_from_ids(self, model_ids: List[str]) -> List[str]:
-        model_names = []
-        for model_id in model_ids:
-            model = self._models_by_id.get(str(model_id))
-            if model:
-                model_names.append(model.name)
-        return model_names
 
     async def add_document(
         self,

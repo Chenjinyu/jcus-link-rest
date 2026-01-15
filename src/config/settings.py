@@ -10,14 +10,18 @@ AS LONG AS THE ENV EXISTS IN OS ENV, IT WILL BE USED, AND CANNOT
 OVERWRITE BY THE .ENV FILE.
 """
 
+from functools import lru_cache
+import os
+
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from functools import lru_cache
 
 
-class Settings(BaseSettings):
-    """Application settings loaded from environment variables"""
-    
+class AppSettings(BaseSettings):
+    """Base application settings loaded from environment variables."""
+
+    app_env: str = "development"
+
     # Application
     app_name: str = "jcus-link-rest"
     app_version: str = "1.0.0"
@@ -56,14 +60,16 @@ class Settings(BaseSettings):
     chromadb_port: int | None = None
     chromadb_collection: str = "resumes"
     
-    # LLM Service
-    default_llm_provider: str = "ollama"  # openai, google, ollama. ollama uses local model
     openai_api_key: str | None = None
     google_api_key: str | None = None
+    default_llm_provider: str | None = None # openai, google, ollama
+    default_embedding_model_name: str | None = None
+    
+    # LLM Models
     openai_model: str = "gpt-4o-mini"
     google_model: str = "gemini-1.5-flash"
-    ollama_url: str = "http://localhost:11434"
     ollama_model: str = "llama3"
+    ollama_url: str = "http://localhost:11434"
     
     # Rate Limiting
     rate_limit_enabled: bool = True
@@ -100,10 +106,34 @@ class Settings(BaseSettings):
     )
 
 
+class DevSettings(AppSettings):
+    """Development defaults."""
+    app_env: str = "development"
+    debug: bool = True
+    log_level: str = "DEBUG"
+    rate_limit_enabled: bool = False
+    # LLM Service
+    default_llm_provider: str = "ollama"  # openai, google, ollama. ollama uses local model
+    default_embedding_model_name: str = "nomic-embed-text"
+
+class ProdSettings(AppSettings):
+    """Production defaults."""
+
+    app_env: str = "production"
+    debug: bool = False
+    log_level: str = "INFO"
+    # LLM Service
+    default_llm_provider: str = "google"  # openai, google, ollama. ollama uses local model
+    default_embedding_model_name: str = "text-embedding-004"
+
+
 @lru_cache()
-def get_settings() -> Settings:
-    """Get cached settings instance"""
-    return Settings()
+def get_settings() -> AppSettings:
+    """Get cached settings instance."""
+    app_env = os.environ.get("APP_ENV", "development").strip().lower()
+    if app_env == "production":
+        return ProdSettings()
+    return DevSettings()
 
 
 # Convenience function to get settings

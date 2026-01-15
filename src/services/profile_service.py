@@ -21,12 +21,12 @@ def _stable_json(data: Any) -> str:
 class ProfileService:
     """Service for fetching profile data and running vector search."""
 
-    def __init__(self, provider_name: str = "openai") -> None:
+    def __init__(self, provider_name: str) -> None:
         if not settings.supabase_url or not settings.supabase_key:
             raise ValueError("Supabase credentials are required")
 
-        self._provider_name = provider_name
-        default_model = get_default_embedding_model(provider_name)
+        self._provider_name = provider_name or settings.default_llm_provider
+        self.default_model = get_default_embedding_model(provider_name)
 
         self._db = VectorDatabase(
             supabase_url=settings.supabase_url,
@@ -40,9 +40,9 @@ class ProfileService:
         user_id: str,
         top_k: int,
         threshold: float,
-        model_name: str | None = None,
+        embedding_model_name: str | None = None,
     ) -> list[dict[str, Any]]:
-        resolved_model_name = model_name
+        resolved_model_name = embedding_model_name
         if not resolved_model_name:
             default_model = get_default_embedding_model(self._provider_name)
             resolved_model_name = default_model.name if default_model else None

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastmcp import FastMCP
@@ -22,6 +23,8 @@ def create_mcp() -> FastMCP:
 
 
 def create_app() -> FastAPI:
+    app_env = settings.app_env or os.getenv("APP_ENV", "development")
+    print(f"Starting {settings.app_name} (version: {settings.app_version}) in {app_env}")
     mcp = create_mcp()
     # FastMCP defaults to /mcp; when mounted at /mcp we need a root path here.
     mcp_app = mcp.http_app(
@@ -67,10 +70,10 @@ def create_app() -> FastAPI:
             await self._app(scope, receive, send)
             
     # • FastMCP’s streamable HTTP transport uses multiple verbs:
-    #   - POST is for JSON‑RPC calls.
-    #   - GET is used for streamable polling/resume behavior.
-    #   - DELETE is used to terminate sessions.
-    #   - OPTIONS is for CORS preflight when browsers call POST.
+    # - POST is for JSON‑RPC calls.
+    # - GET is used for streamable polling/resume behavior.
+    # - DELETE is used to terminate sessions.
+    # - OPTIONS is for CORS preflight when browsers call POST.
     app.router.routes.append(
         Route(
             "/mcp",
@@ -79,8 +82,6 @@ def create_app() -> FastAPI:
         )
     )
     app.mount("/mcp", mcp_app)
-
     return app
-
 
 app = create_app()
