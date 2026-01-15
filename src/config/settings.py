@@ -68,8 +68,8 @@ class AppSettings(BaseSettings):
     # LLM Models
     openai_model: str = "gpt-4o-mini"
     google_model: str = "gemini-1.5-flash"
-    ollama_model: str = "llama3"
-    ollama_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3.1:8b"
+    ollama_url: str = "http://127.0.0.1:11434"
     
     # Rate Limiting
     rate_limit_enabled: bool = True
