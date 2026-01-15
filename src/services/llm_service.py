@@ -275,7 +275,7 @@ class OllamaLLMService(BaseLLMService):
                 "POST",
                 f"{self.base_url}/api/generate",
                 json=payload,
-                timeout=60.0,
+                timeout=settings.ollama_timeout_seconds,
             ) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():
@@ -298,7 +298,7 @@ class OllamaLLMService(BaseLLMService):
             response = await client.post(
                 f"{self.base_url}/api/generate",
                 json=payload,
-                timeout=60.0,
+                timeout=settings.ollama_timeout_seconds,
             )
             response.raise_for_status()
             data = response.json()

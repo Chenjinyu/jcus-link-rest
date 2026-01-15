@@ -58,6 +58,13 @@ def _resolve_user_id(user_id: str | None) -> str:
     return resolved
 
 
+def _format_exception_message(exc: Exception) -> str:
+    message = str(exc).strip()
+    if message:
+        return message
+    return f"{type(exc).__name__}: {exc!r}"
+
+
 def _resolve_provider_and_embedding_model(
     provider: str | None,
     embedding_model_name: str | None,
@@ -221,9 +228,9 @@ def register_tools(mcp: FastMCP) -> None:
             )
         except Exception as exc:
             if ctx:
-                await ctx.error(f"Skill match failed: {exc}")
-            logger.error("Skill match failed: %s", exc)
-            raise FileUploadException(str(exc)) from exc
+                await ctx.error(f"Skill match failed: {_format_exception_message(exc)}")
+            logger.exception("Skill match failed")
+            raise FileUploadException(_format_exception_message(exc)) from exc
 
     @mcp.tool()
     async def generate_updated_resume(
@@ -270,10 +277,10 @@ def register_tools(mcp: FastMCP) -> None:
             )
         except Exception as exc:
             if ctx:
-                await ctx.error(f"Resume generation failed: {exc}")
-            logger.error("Resume generation failed: %s", exc)
+                await ctx.error(f"Resume generation failed: {_format_exception_message(exc)}")
+            logger.exception("Resume generation failed")
             return json.dumps(
-                {"status": "error", "message": str(exc)},
+                {"status": "error", "message": _format_exception_message(exc)},
                 indent=2,
                 ensure_ascii=True,
             )
@@ -312,10 +319,10 @@ def register_tools(mcp: FastMCP) -> None:
             )
         except Exception as exc:
             if ctx:
-                await ctx.error(f"Resume download failed: {exc}")
-            logger.error("Resume download failed: %s", exc)
+                await ctx.error(f"Resume download failed: {_format_exception_message(exc)}")
+            logger.exception("Resume download failed")
             return json.dumps(
-                {"status": "error", "message": str(exc)},
+                {"status": "error", "message": _format_exception_message(exc)},
                 indent=2,
                 ensure_ascii=True,
             )

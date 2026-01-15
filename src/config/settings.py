@@ -70,6 +70,7 @@ class AppSettings(BaseSettings):
     google_model: str = "gemini-1.5-flash"
     ollama_model: str = "llama3.1:8b"
     ollama_url: str = "http://127.0.0.1:11434"
+    ollama_timeout_seconds: float = 180.0
     
     # Rate Limiting
     rate_limit_enabled: bool = True
