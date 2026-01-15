@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Example client for calling MCP tools, prompts, and resources."""
+"""Example client for calling MCP tools, prompts, and resources.
+
+Prompt construction and LLM calls happen server-side; this script only invokes MCP APIs.
+"""
 
 from __future__ import annotations
 

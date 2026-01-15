@@ -31,6 +31,11 @@ requests.
 
 Below are example JSON-RPC payloads you can send to `/mcp` for the MCP tools.
 
+## Developer notes
+LLM prompt construction now lives in `src/services/resume_service.py`. The LLM service
+exposes `embed_text`, `generate_stream_text`, and `generate_text_response` for embeddings
+and text generation.
+
 ### Tools
 1. List matched job skills
 ```sh
