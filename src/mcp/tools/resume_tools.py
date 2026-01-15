@@ -82,10 +82,13 @@ def _resolve_provider_and_embedding_model(
                 resolved_model_name = default_model.name
 
     model = _get_embedding_model_by_name(resolved_model_name)
-    if not model:
-        raise ValueError("Embedding model not found in Supabase")
-    if model.provider != resolved_provider:
-        raise ValueError("Embedding model provider does not match requested provider")
+    if not model or model.provider != resolved_provider:
+        fallback_model = _get_default_embedding_model(resolved_provider)
+        if not fallback_model:
+            raise ValueError(
+                "Embedding model not found in Supabase for the requested provider"
+            )
+        model = fallback_model
 
     return resolved_provider, model
 
@@ -207,8 +210,7 @@ def register_tools(mcp: FastMCP) -> None:
             return json.dumps(
                 {
                     "status": "success",
-                    "job_description_preview": job_description[:200]
-                    + ("..." if len(job_description) > 200 else ""),
+                    "job_description_preview": job_description,
                     "match_rate": match_rate,
                     "match_rate_percent": int(round(match_rate * 100)),
                     "matches": match_items,
