@@ -4,6 +4,7 @@ Resume Service - High-level business logic for resume operations
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -12,8 +13,14 @@ from collections.abc import AsyncGenerator
 
 from src.config import settings
 from src.libs.resume_cache import ResumeCacheEntry, get_resume_cache
-from src.services.llm_service import BaseLLMService, get_llm_service
+from src.libs.vector_database import EmbeddingModel
+from src.services.llm_service import get_llm_service
 from src.services.profile_service import get_profile_service, ProfileService
+from src.mcp.prompts import (
+    build_analysis_prompt,
+    build_resume_from_source_prompt,
+    build_resume_prompt,
+)
 from src.schemas import (
     ResumeMatch,
     JobAnalysis,
@@ -22,6 +29,34 @@ from src.schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _default_analysis_result() -> dict:
+    return {
+        "required_skills": ["Python", "FastAPI", "React", "AWS"],
+        "experience_level": "Senior",
+        "key_responsibilities": [
+            "Design and implement scalable systems",
+            "Lead technical projects",
+            "Mentor junior developers",
+        ],
+        "estimated_match_threshold": 0.7,
+    }
+
+
+def _parse_analysis_response(response: str | None) -> dict:
+    if not response:
+        return _default_analysis_result()
+    raw = response.strip()
+    if "{" in raw and "}" in raw:
+        raw = raw[raw.find("{") : raw.rfind("}") + 1]
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return _default_analysis_result()
+    if not isinstance(data, dict):
+        return _default_analysis_result()
+    return data
 
 
 @dataclass
@@ -46,7 +81,6 @@ class ResumeService:
     """Service for resume-related operations"""
 
     def __init__(self) -> None:
-        self.llm_service: BaseLLMService = get_llm_service()
         self.profile_service: ProfileService | None
         try:
             self.profile_service = get_profile_service()
@@ -104,6 +138,7 @@ class ResumeService:
         job_description: str,
         user_id: str,
         top_k: int,
+        embedding_model: EmbeddingModel,
     ) -> tuple[list[dict[str, Any]], list[ResumeMatch]]:
         if self.profile_service is None:
             return [], []
@@ -112,6 +147,7 @@ class ResumeService:
             user_id=user_id,
             top_k=top_k,
             threshold=settings.min_similarity_threshold,
+            embedding_model=embedding_model,
         )
         matches = self._map_search_results_to_matches(raw_results)
         return raw_results, matches
@@ -119,6 +155,8 @@ class ResumeService:
     async def search_matching_resumes(
         self,
         request: SearchMatchesRequest,
+        provider: str,
+        embedding_model: EmbeddingModel,
         user_id: str | None = None,
     ) -> SearchMatchesResponse:
         """Search for resumes matching the job description"""
@@ -127,19 +165,29 @@ class ResumeService:
 
         resolved_user_id = self._resolve_user_id(user_id)
         _, matches = await self._search_profile_matches(
-            request.job_description, resolved_user_id, request.top_k
+            request.job_description,
+            resolved_user_id,
+            request.top_k,
+            embedding_model,
         )
 
         logger.info("Found %s matching resumes", len(matches))
 
         return SearchMatchesResponse(matches=matches, total_found=len(matches))
 
-    async def analyze_job_description(self, job_description: str) -> JobAnalysis:
+    async def analyze_job_description(
+        self,
+        job_description: str,
+        provider: str,
+    ) -> JobAnalysis:
         """Analyze job description to extract key information"""
 
         logger.info("Analyzing job description")
 
-        analysis_data = await self.llm_service.analyze_text(job_description)
+        llm_service = get_llm_service(provider)
+        prompt = build_analysis_prompt(job_description)
+        response = await llm_service.generate_text_response(prompt)
+        analysis_data = _parse_analysis_response(response)
 
         return JobAnalysis(
             required_skills=analysis_data.get("required_skills", []),
@@ -155,8 +203,9 @@ class ResumeService:
         self,
         job_description: str,
         matches: list[ResumeMatch],
+        provider: str,
     ) -> MatchSummary:
-        analysis = await self.analyze_job_description(job_description)
+        analysis = await self.analyze_job_description(job_description, provider)
         required_skills = {skill.lower() for skill in analysis.required_skills}
         matched_skill_pool = {skill.lower() for m in matches for skill in m.skills}
         matched_skills = sorted({skill for skill in required_skills & matched_skill_pool})
@@ -197,19 +246,18 @@ class ResumeService:
         self,
         job_description: str,
         matched_resumes: List[ResumeMatch],
+        provider: str,
         stream: bool = True,
     ) -> AsyncIterator[str]:
         """Generate an optimized resume based on job description and matches"""
 
         logger.info("Generating resume for %s matched profiles", len(matched_resumes))
 
+        llm_service = get_llm_service(provider)
+        prompt = build_resume_prompt(job_description, matched_resumes)
         resume_generator = cast(
             AsyncGenerator[str, None],
-            self.llm_service.generate_resume(
-                job_description,
-                matched_resumes,
-                stream=stream,
-            ),
+            llm_service.generate_stream_text(prompt, stream=stream),
         )
         async for chunk in resume_generator:
             yield chunk
@@ -219,6 +267,8 @@ class ResumeService:
     async def generate_updated_resume(
         self,
         job_description: str,
+        provider: str,
+        embedding_model: EmbeddingModel,
         top_k: int = 5,
         user_id: str | None = None,
         use_cache: bool = True,
@@ -229,10 +279,13 @@ class ResumeService:
             raise ValueError("Profile service unavailable")
 
         raw_matches, matches = await self._search_profile_matches(
-            job_description, resolved_user_id, top_k
+            job_description,
+            resolved_user_id,
+            top_k,
+            embedding_model,
         )
 
-        match_summary = await self.summarize_matches(job_description, matches)
+        match_summary = await self.summarize_matches(job_description, matches, provider)
 
         profile_ids = [
             str(match.get("profile_data_id"))
@@ -263,19 +316,12 @@ class ResumeService:
                 }
 
         resume_chunks: list[str] = []
-        resume_generator = cast(
-            AsyncGenerator[str, None],
-            self.llm_service.generate_resume_from_source(
-                job_description=job_description,
-                resume_source=resume_source,
-                match_summary=match_summary.to_dict(),
-                stream=False,
-            ),
+        prompt = build_resume_from_source_prompt(
+            job_description,
+            resume_source,
+            match_summary.to_dict(),
         )
-        async for chunk in resume_generator:
-            resume_chunks.append(chunk)
-
-        resume_text = "".join(resume_chunks)
+        resume_text = await get_llm_service(provider).generate_text_response(prompt)
 
         await self.resume_cache.set(
             ResumeCacheEntry(
@@ -303,6 +349,7 @@ class ResumeService:
 
     async def generate_latest_resume(
         self,
+        provider: str,
         user_id: str | None = None,
         use_cache: bool = True,
     ) -> dict[str, Any]:
@@ -339,19 +386,12 @@ class ResumeService:
         )
 
         resume_chunks: list[str] = []
-        resume_generator = cast(
-            AsyncGenerator[str, None],
-            self.llm_service.generate_resume_from_source(
-                job_description="",
-                resume_source=resume_source,
-                match_summary=match_summary.to_dict(),
-                stream=False,
-            ),
+        prompt = build_resume_from_source_prompt(
+            "",
+            resume_source,
+            match_summary.to_dict(),
         )
-        async for chunk in resume_generator:
-            resume_chunks.append(chunk)
-
-        resume_text = "".join(resume_chunks)
+        resume_text = await get_llm_service(provider).generate_text_response(prompt)
 
         await self.resume_cache.set(
             ResumeCacheEntry(

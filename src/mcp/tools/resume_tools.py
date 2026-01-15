@@ -22,9 +22,33 @@ from fastmcp.server import Context
 from src.config import settings
 from src.libs.document_parser import get_document_parser
 from src.services import get_profile_service, get_resume_service
+from src.libs.vector_database import EmbeddingModel, VectorDatabase
 from src.libs.exceptions import FileUploadException
 
 logger = logging.getLogger(__name__)
+_vector_db: VectorDatabase | None = None
+
+
+def _get_vector_database() -> VectorDatabase:
+    global _vector_db
+    if _vector_db is None:
+        if not settings.supabase_url or not settings.supabase_key:
+            raise ValueError("Supabase credentials are required")
+        _vector_db = VectorDatabase(
+            supabase_url=settings.supabase_url,
+            supabase_key=settings.supabase_key,
+            postgres_url=settings.supabase_postgres_url or "",
+        )
+    return _vector_db
+
+
+def _get_embedding_model_by_name(name: str) -> EmbeddingModel | None:
+    return _get_vector_database().get_embedding_model(name)
+
+
+def _get_default_embedding_model(provider: str) -> EmbeddingModel | None:
+    models = _get_vector_database().list_embedding_models(provider=provider)
+    return models[0] if models else None
 
 
 def _resolve_user_id(user_id: str | None) -> str:
@@ -32,6 +56,38 @@ def _resolve_user_id(user_id: str | None) -> str:
     if not resolved:
         raise ValueError("user_id is required (set author_user_id or pass user_id)")
     return resolved
+
+
+def _resolve_provider_and_embedding_model(
+    provider: str | None,
+    embedding_model_name: str | None,
+) -> tuple[str, EmbeddingModel]:
+    resolved_provider = (provider or settings.default_llm_provider or "").strip().lower()
+    if not resolved_provider:
+        raise ValueError("LLM provider is required")
+
+    resolved_model_name = embedding_model_name
+    if not resolved_model_name:
+        if provider is not None:
+            default_model = _get_default_embedding_model(resolved_provider)
+            if not default_model:
+                raise ValueError("No embedding model configured for the provider")
+            resolved_model_name = default_model.name
+        else:
+            resolved_model_name = settings.default_embedding_model_name
+            if not resolved_model_name:
+                default_model = _get_default_embedding_model(resolved_provider)
+                if not default_model:
+                    raise ValueError("No embedding model configured for the provider")
+                resolved_model_name = default_model.name
+
+    model = _get_embedding_model_by_name(resolved_model_name)
+    if not model:
+        raise ValueError("Embedding model not found in Supabase")
+    if model.provider != resolved_provider:
+        raise ValueError("Embedding model provider does not match requested provider")
+
+    return resolved_provider, model
 
 
 async def _extract_job_description(
@@ -75,6 +131,7 @@ def register_tools(mcp: FastMCP) -> None:
         user_id: str | None = None,
         top_k: int = 10,
         threshold: float = settings.min_similarity_threshold,
+        provider: str | None = None,
         embedding_model_name: str | None = None,
         ctx: Context | None = None,
     ) -> str:
@@ -87,7 +144,8 @@ def register_tools(mcp: FastMCP) -> None:
         - user_id: User identifier for profile data.
         - top_k: Number of top matches to return.
         - threshold: Minimum similarity threshold (0.0 to 1.0).
-        - embedding_model_name: Optional LLM model name for embeddings.
+        - provider: Optional LLM provider name (openai, google, ollama).
+        - embedding_model_name: Optional embedding model name.
         - ctx: MCP Context for logging.
         Returns:
             JSON string with matched chunks and similarity rates.
@@ -111,8 +169,10 @@ def register_tools(mcp: FastMCP) -> None:
             if ctx:
                 await ctx.info("Running similarity search against profile data")
 
-            if not embedding_model_name:
-                embedding_model_name = settings.default_embedding_model_name
+            resolved_provider, resolved_model = _resolve_provider_and_embedding_model(
+                provider=provider,
+                embedding_model_name=embedding_model_name,
+            )
             try:
                 profile_service = get_profile_service()
             except Exception as exc:
@@ -123,7 +183,7 @@ def register_tools(mcp: FastMCP) -> None:
                 user_id=resolved_user_id,
                 top_k=top_k,
                 threshold=threshold,
-                embedding_model_name=embedding_model_name,
+                embedding_model=resolved_model,
             )
 
             match_items = []
@@ -166,6 +226,8 @@ def register_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     async def generate_updated_resume(
         job_description: str,
+        provider: str | None = None,
+        embedding_model_name: str | None = None,
         top_k: int = settings.default_top_k,
         user_id: str | None = None,
         use_cache: bool = True,
@@ -179,8 +241,14 @@ def register_tools(mcp: FastMCP) -> None:
             if ctx:
                 await ctx.info("Generating updated resume")
 
+            resolved_provider, resolved_model = _resolve_provider_and_embedding_model(
+                provider=provider,
+                embedding_model_name=embedding_model_name,
+            )
             result = await resume_service.generate_updated_resume(
                 job_description=job_description,
+                provider=resolved_provider,
+                embedding_model=resolved_model,
                 top_k=top_k,
                 user_id=user_id,
                 use_cache=use_cache,
@@ -210,6 +278,7 @@ def register_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def download_latest_resume(
+        provider: str | None = None,
         user_id: str | None = None,
         use_cache: bool = True,
         ctx: Context | None = None,
@@ -219,7 +288,11 @@ def register_tools(mcp: FastMCP) -> None:
             if ctx:
                 await ctx.info("Fetching latest resume")
 
+            resolved_provider = (provider or settings.default_llm_provider or "").strip().lower()
+            if not resolved_provider:
+                raise ValueError("LLM provider is required")
             result = await resume_service.generate_latest_resume(
+                provider=resolved_provider,
                 user_id=user_id,
                 use_cache=use_cache,
             )

@@ -1,248 +1,55 @@
 """
 #### this file has overlap with vector_database.py ####
 # LLM Service for resume generation and text processing.
-llm_service.py init ai model and use it to call supabase.
-vector_database.py gets ai embedding models from supabase database, init the ai model and call vectors from supabase.
+llm_service.py initializes AI models for generation and embeddings.
+vector_database.py fetches embedding models from Supabase and manages vector queries.
 """
 
 import json
-import logging
 from abc import ABC, abstractmethod
-from collections.abc import Callable # runtime behavior check
-from typing import Any, AsyncGenerator, AsyncIterator, List, Protocol # static type hints
+from collections.abc import Callable
+from typing import Any, AsyncGenerator, AsyncIterator, Protocol
 
-from certifi import contents
 import httpx
-from numpy import isin
 import openai
 from google import genai
 
 from src.config import settings
-from src.libs.exceptions import LLMServiceException
-from src.libs.vector_database import EmbeddingModel, VectorDatabase
-from src.mcp.prompts import (
-    build_analysis_prompt,
-    build_resume_from_source_prompt,
-    build_resume_prompt,
-)
-from src.schemas import ResumeMatch
-
-logger = logging.getLogger(__name__)
-
-
-def _default_analysis_result() -> dict:
-    return {
-        "required_skills": ["Python", "FastAPI", "React", "AWS"],
-        "experience_level": "Senior",
-        "key_responsibilities": [
-            "Design and implement scalable systems",
-            "Lead technical projects",
-            "Mentor junior developers",
-        ],
-        "estimated_match_threshold": 0.7,
-    }
-
-
-def _parse_analysis_response(response: str | None) -> dict:
-    if not response:
-        return _default_analysis_result()
-    raw = response.strip()
-    if "{" in raw and "}" in raw:
-        raw = raw[raw.find("{") : raw.rfind("}") + 1]
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        return _default_analysis_result()
-    if not isinstance(data, dict):
-        return _default_analysis_result()
-    return data
-
-
-def _ensure_list(value: Any) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return [str(item) for item in value if item]
-    return [str(value)]
-
-
-def _format_date_range(entry: dict[str, Any]) -> str:
-    start = entry.get("start_date")
-    end = entry.get("end_date")
-    is_current = entry.get("is_current")
-    if start and (end or is_current):
-        return f"{start} - {end or 'Present'}"
-    if start:
-        return str(start)
-    return ""
-
-
-def _render_resume_from_source(resume_source: dict[str, Any]) -> str:
-    profile_data = resume_source.get("profile_data", []) or []
-    personal_attributes = resume_source.get("personal_attributes", []) or []
-
-    sections: list[str] = ["# Resume\n"]
-
-    summary_items = [
-        attr
-        for attr in personal_attributes
-        if attr.get("attribute_type") in {"summary", "bio", "headline"}
-    ]
-    if summary_items:
-        sections.append("## Professional Summary\n")
-        for item in summary_items:
-            description = item.get("description") or item.get("value")
-            if description:
-                sections.append(f"- {description}\n")
-        sections.append("\n")
-
-    skills: list[str] = []
-    for entry in profile_data:
-        if entry.get("category") == "skill":
-            data = entry.get("data") or {}
-            skills.extend(_ensure_list(data.get("skills") or data.get("name")))
-    if skills:
-        unique_skills = sorted({skill for skill in skills if skill})
-        sections.append("## Key Skills\n")
-        sections.append("- " + ", ".join(unique_skills) + "\n\n")
-
-    work_items = [entry for entry in profile_data if entry.get("category") == "work_experience"]
-    if work_items:
-        sections.append("## Work Experience\n")
-        for entry in work_items:
-            data = entry.get("data") or {}
-            title = data.get("title") or data.get("position") or data.get("role")
-            company = data.get("company") or data.get("organization")
-            header = " | ".join([part for part in [title, company] if part])
-            if header:
-                sections.append(f"### {header}\n")
-            date_range = _format_date_range(entry)
-            if date_range:
-                sections.append(f"*{date_range}*\n")
-            details: list[str] = []
-            details.extend(_ensure_list(data.get("description")))
-            details.extend(_ensure_list(data.get("responsibilities")))
-            details.extend(_ensure_list(data.get("achievements")))
-            if details:
-                for detail in details:
-                    sections.append(f"- {detail}\n")
-            sections.append("\n")
-
-    education_items = [entry for entry in profile_data if entry.get("category") == "education"]
-    if education_items:
-        sections.append("## Education\n")
-        for entry in education_items:
-            data = entry.get("data") or {}
-            degree = data.get("degree") or data.get("title")
-            institution = data.get("institution") or data.get("school")
-            line = " | ".join([part for part in [degree, institution] if part])
-            if line:
-                sections.append(f"- {line}\n")
-        sections.append("\n")
-
-    cert_items = [entry for entry in profile_data if entry.get("category") == "certification"]
-    if cert_items:
-        sections.append("## Certifications\n")
-        for entry in cert_items:
-            data = entry.get("data") or {}
-            name = data.get("name") or data.get("title")
-            issuer = data.get("issuer")
-            line = " | ".join([part for part in [name, issuer] if part])
-            if line:
-                sections.append(f"- {line}\n")
-        sections.append("\n")
-
-    project_items = [entry for entry in profile_data if entry.get("category") == "project"]
-    if project_items:
-        sections.append("## Projects\n")
-        for entry in project_items:
-            data = entry.get("data") or {}
-            title = data.get("title") or data.get("name")
-            if title:
-                sections.append(f"### {title}\n")
-            details = _ensure_list(data.get("description"))
-            for detail in details:
-                sections.append(f"- {detail}\n")
-            sections.append("\n")
-
-    return "".join(sections).rstrip() + "\n"
+from src.libs.vector_database import EmbeddingModel
 
 
 class EmbeddingProvider(Protocol):
+    """Protocol for embedding generation providers."""
+
     async def generate_embeddings(self, text: str, model: EmbeddingModel) -> list[float]:
+        """Generate embeddings for input text using the given model."""
         ...
 
 
-_embedding_models_cache: list[EmbeddingModel] | None = None
 _embedding_provider: EmbeddingProvider | None = None
 
 
-def _get_embedding_models_from_supabase() -> list[EmbeddingModel]:
-    global _embedding_models_cache
-    if _embedding_models_cache is not None:
-        return _embedding_models_cache
+class LLMEmbeddingProvider:
+    """Embedding generator backed by vendor APIs."""
 
-    if not settings.supabase_url or not settings.supabase_key:
-        _embedding_models_cache = []
-        return _embedding_models_cache
-
-    db = VectorDatabase(
-        supabase_url=settings.supabase_url,
-        supabase_key=settings.supabase_key,
-        postgres_url=settings.supabase_postgres_url or "",
-    )
-    _embedding_models_cache = db.list_embedding_models()
-    return _embedding_models_cache
-
-
-def get_embedding_models(provider: str | None = None) -> list[EmbeddingModel]:
-    models = _get_embedding_models_from_supabase()
-    if provider is None:
-        return list(models)
-    normalized = provider.strip().lower()
-    return [model for model in models if model.provider == normalized]
-
-
-def get_embedding_model_by_name(name: str) -> EmbeddingModel | None:
-    for model in _get_embedding_models_from_supabase():
-        if model.name == name:
-            return model
-    return None
-
-
-def get_default_embedding_model(provider: str) -> EmbeddingModel | None:
-    models = get_embedding_models(provider)
-    return models[0] if models else None
-
-
-def get_default_generation_model(provider: str) -> EmbeddingModel | None:
-    models = [
-        model
-        for model in get_embedding_models(provider)
-        if model.dimensions <= 0
-    ]
-    return models[0] if models else None
-
-
-class SupabaseEmbeddingProvider:
     def __init__(
         self,
-        models: list[EmbeddingModel],
         openai_api_key: str | None,
         google_api_key: str | None,
         ollama_url: str = "http://localhost:11434",
     ) -> None:
-        self._models_by_name = {model.name: model for model in models}
-        self._openai_client = None
-        self._google_client = None
-        self._ollama_url = ollama_url
+        """Initialize embedding clients based on available API keys."""
+        self._openai_client: openai.OpenAI | None = None
+        self._google_client: genai.Client | None = None
+        self._ollama_url: str = ollama_url
 
-        if any(model.provider == "openai" for model in models) and openai_api_key:
+        if openai_api_key:
             self._openai_client = openai.OpenAI(api_key=openai_api_key)
-        if any(model.provider == "google" for model in models) and google_api_key:
+        if google_api_key:
             self._google_client = genai.Client(api_key=google_api_key)
 
     async def generate_embeddings(self, text: str, model: EmbeddingModel) -> list[float]:
+        """Generate embeddings from the provider configured on the model."""
         dimensions = model.dimensions if model.dimensions <= 2000 else None
         if model.provider == "openai":
             if not self._openai_client:
@@ -268,9 +75,7 @@ class SupabaseEmbeddingProvider:
             result = self._google_client.models.embed_content(
                 model=model.model_identifier,
                 contents=[text],
-                config={
-                    'output_dimensionality': dimensions
-                },
+                config={"output_dimensionality": dimensions},
             )
             embs = getattr(result, "embeddings", None)
             if not embs:
@@ -278,17 +83,16 @@ class SupabaseEmbeddingProvider:
             embs_value = embs.values
             if isinstance(embs_value, list) and len(embs_value) > 0:
                 return [float(x) for x in embs_value]
-            else: return []
+            return []
         raise ValueError(f"Provider {model.provider} not supported")
 
 
 def get_embedding_provider() -> EmbeddingProvider:
+    """Return a singleton embedding provider instance."""
     global _embedding_provider
     if _embedding_provider is not None:
         return _embedding_provider
-    models = _get_embedding_models_from_supabase()
-    _embedding_provider = SupabaseEmbeddingProvider(
-        models=models,
+    _embedding_provider = LLMEmbeddingProvider(
         openai_api_key=settings.openai_api_key,
         google_api_key=settings.google_api_key,
     )
@@ -296,6 +100,7 @@ def get_embedding_provider() -> EmbeddingProvider:
 
 
 def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]:
+    """Split text into overlapping word chunks."""
     words = text.split()
     if len(words) <= chunk_size:
         return [text]
@@ -307,37 +112,11 @@ def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]
     return chunks
 
 
-async def build_embeddings_by_model(
-    chunks: list[str],
-    model_names: list[str],
-) -> dict[str, list[list[float]]]:
-    embeddings_by_model: dict[str, list[list[float]]] = {}
-    for model_name in model_names:
-        model = get_embedding_model_by_name(model_name)
-        if not model:
-            raise ValueError(f"Embedding model not found: {model_name}")
-        embeddings: list[list[float]] = []
-        for chunk in chunks:
-            embeddings.append(await get_embedding_provider().create_embedding(chunk, model))
-        embeddings_by_model[model_name] = embeddings
-    return embeddings_by_model
-
-
-async def create_embedding(
-    text: str,
-    model_name: str | None = None,
-    provider: str | None = None,
-) -> list[float]:
-    if model_name:
-        model = get_embedding_model_by_name(model_name)
-    else:
-        resolved_provider = provider or settings.default_llm_provider
-        model = get_default_embedding_model(resolved_provider)
-
+async def embed_text(text: str, model: EmbeddingModel | None) -> list[float]:
+    """Generate embeddings for text using the provided embedding model."""
     if not model:
-        raise ValueError("Embedding model not found for the requested provider/name")
-
-    return await get_embedding_provider().create_embedding(text, model)
+        raise ValueError("embedding model is required")
+    return await get_embedding_provider().generate_embeddings(text, model)
 
 
 class BaseLLMService(ABC):
@@ -345,89 +124,34 @@ class BaseLLMService(ABC):
     Abstract base class for LLM services by following the dependency inversion principle,
     depending on abstractions rather than concrete implementations."""
 
-    def _use_rendered_source(self) -> bool:
-        return False
-
-    def _handle_analysis_error(self, exc: Exception) -> None:
-        raise LLMServiceException("text analysis", str(exc))
-
-    async def _handle_resume_error(self, exc: Exception) -> AsyncIterator[str]:
-        raise LLMServiceException("resume generation", str(exc))
-        if False:
-            yield ""
-
-    async def _handle_resume_source_error(
-        self,
-        exc: Exception,
-        resume_source: dict[str, Any],
-    ) -> AsyncIterator[str]:
-        raise LLMServiceException("resume generation", str(exc))
-        if False:
-            yield ""
-
     @abstractmethod
-    async def _stream_generate(self, prompt: str) -> AsyncIterator[str]:
+    async def _stream_generate_text(self, prompt: str) -> AsyncIterator[str]:
+        """Stream text generation output for a prompt."""
         raise NotImplementedError
 
     @abstractmethod
-    async def _generate(self, prompt: str) -> str:
+    async def _generate_text(self, prompt: str) -> str:
+        """Generate a full text response for a prompt."""
         raise NotImplementedError
 
     async def _yield_prompt(self, prompt: str, stream: bool) -> AsyncIterator[str]:
+        """Yield text chunks or a single response depending on stream mode."""
         if stream:
-            async for chunk in self._stream_generate(prompt):
+            async for chunk in self._stream_generate_text(prompt): # type: ignore
                 yield chunk
         else:
-            yield await self._generate(prompt)
+            yield await self._generate_text(prompt)
 
-    async def generate_resume(
-        self,
-        job_description: str,
-        matched_resumes: List[ResumeMatch],
-        stream: bool = True,
+    async def generate_stream_text(
+        self, prompt: str, stream: bool = True
     ) -> AsyncGenerator[str, None]:
-        """Generate resume based on job description and matches"""
-        prompt = build_resume_prompt(job_description, matched_resumes)
-        try:
-            async for chunk in self._yield_prompt(prompt, stream):
-                yield chunk
-        except Exception as exc:
-            async for chunk in self._handle_resume_error(exc):
-                yield chunk
+        """Generate/Answer text from a prompt, optionally streaming."""
+        async for chunk in self._yield_prompt(prompt, stream):
+            yield chunk
 
-    async def analyze_text(self, text: str) -> dict:
-        """Analyze text and extract structured information"""
-        prompt = build_analysis_prompt(text)
-        try:
-            response = await self._generate(prompt)
-        except Exception as exc:
-            self._handle_analysis_error(exc)
-            return _default_analysis_result()
-        return _parse_analysis_response(response)
-
-    async def generate_resume_from_source(
-        self,
-        job_description: str,
-        resume_source: dict[str, Any],
-        match_summary: dict[str, Any],
-        stream: bool = True,
-    ) -> AsyncGenerator[str, None]:
-        """Generate resume using structured source data"""
-        if self._use_rendered_source():
-            yield _render_resume_from_source(resume_source)
-            return
-
-        prompt = build_resume_from_source_prompt(
-            job_description,
-            resume_source,
-            match_summary,
-        )
-        try:
-            async for chunk in self._yield_prompt(prompt, stream):
-                yield chunk
-        except Exception as exc:
-            async for chunk in self._handle_resume_source_error(exc, resume_source):
-                yield chunk
+    async def generate_text_response(self, prompt: str) -> str:
+        """Generate a full response for a prompt."""
+        return await self._generate_text(prompt)
 
 
 LLMServiceFactoryCallable = Callable[
@@ -453,23 +177,20 @@ def available_llm_providers() -> list[str]:
 class GoogleLLMService(BaseLLMService):
     """Google Gemini LLM service implementation"""
 
-    def __init__(self):
-        self.api_key = settings.google_api_key
-        generation_model = get_default_generation_model("google")
-        self.model = (
-            generation_model.model_identifier
-            if generation_model and generation_model.model_identifier
-            else settings.google_model
-        )
-        self.max_tokens = 8192  # Default for Gemini models
-        self.temperature = 0.7  # Default temperature
+    def __init__(self) -> None:
+        """Initialize Google LLM client settings."""
+        self.api_key: str | None = settings.google_api_key
+        self.model: str = settings.google_model
+        self.max_tokens: int = 8192  # Default for Gemini models
+        self.temperature: float = 0.7  # Default temperature
 
         if not self.api_key:
             raise ValueError("Google API key not set")
 
-        self.client = genai.Client(api_key=self.api_key)
+        self.client: genai.Client = genai.Client(api_key=self.api_key)
 
-    async def _stream_generate(self, prompt: str) -> AsyncIterator[str]:
+    async def _stream_generate_text(self, prompt: str) -> AsyncIterator[str]:
+        """Stream Google model text generation output."""
         response = self.client.models.generate_content_stream(
             model=self.model,
             contents=prompt,
@@ -479,7 +200,8 @@ class GoogleLLMService(BaseLLMService):
             if text:
                 yield text
 
-    async def _generate(self, prompt: str) -> str:
+    async def _generate_text(self, prompt: str) -> str:
+        """Generate a full response using the Google model."""
         response = self.client.models.generate_content(
             model=self.model,
             contents=prompt,
@@ -491,23 +213,20 @@ class GoogleLLMService(BaseLLMService):
 class OpenAILLMService(BaseLLMService):
     """OpenAI GPT service implementation"""
 
-    def __init__(self):
-        self.api_key = settings.openai_api_key
-        generation_model = get_default_generation_model("openai")
-        self.model = (
-            generation_model.model_identifier
-            if generation_model and generation_model.model_identifier
-            else settings.openai_model
-        )
-        self.max_tokens = 4000  # Default for OpenAI models
-        self.temperature = 0.7  # Default temperature
+    def __init__(self) -> None:
+        """Initialize OpenAI client settings."""
+        self.api_key: str | None = settings.openai_api_key
+        self.model: str = settings.openai_model
+        self.max_tokens: int = 4000  # Default for OpenAI models
+        self.temperature: float = 0.7  # Default temperature
 
         if not self.api_key:
             raise ValueError("OpenAI API key not set")
 
-        self.client = openai.AsyncOpenAI(api_key=self.api_key)
+        self.client: openai.AsyncOpenAI = openai.AsyncOpenAI(api_key=self.api_key)
 
-    async def _stream_generate(self, prompt: str) -> AsyncIterator[str]:
+    async def _stream_generate_text(self, prompt: str) -> AsyncIterator[str]:
+        """Stream OpenAI model text generation output."""
         response = await self.client.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
@@ -521,7 +240,8 @@ class OpenAILLMService(BaseLLMService):
             if content:
                 yield content
 
-    async def _generate(self, prompt: str) -> str:
+    async def _generate_text(self, prompt: str) -> str:
+        """Generate a full response using the OpenAI model."""
         response = await self.client.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
@@ -535,20 +255,15 @@ class OpenAILLMService(BaseLLMService):
 class OllamaLLMService(BaseLLMService):
     """Ollama LLM service implementation"""
 
-    def __init__(self):
-        self.base_url = settings.ollama_url
-        generation_model = get_default_generation_model("ollama")
-        self.model = (
-            generation_model.model_identifier
-            if generation_model and generation_model.model_identifier
-            else settings.ollama_model
-        )
-        if not generation_model:
-            logger.warning("No Ollama generation model in Supabase; using settings fallback.")
-        self.max_tokens = 4096
-        self.temperature = 0.7
+    def __init__(self) -> None:
+        """Initialize Ollama client settings."""
+        self.base_url: str = settings.ollama_url
+        self.model: str = settings.ollama_model
+        self.max_tokens: int = 4096
+        self.temperature: float = 0.7
 
-    async def _stream_generate(self, prompt: str) -> AsyncIterator[str]:
+    async def _stream_generate_text(self, prompt: str) -> AsyncIterator[str]:
+        """Stream Ollama model text generation output."""
         payload = {
             "model": self.model,
             "prompt": prompt,
@@ -571,7 +286,8 @@ class OllamaLLMService(BaseLLMService):
                     if chunk:
                         yield chunk
 
-    async def _generate(self, prompt: str) -> str:
+    async def _generate_text(self, prompt: str) -> str:
+        """Generate a full response using the Ollama model."""
         payload = {
             "model": self.model,
             "prompt": prompt,
@@ -611,14 +327,16 @@ register_llm_service("google", GoogleLLMService)
 register_llm_service("ollama", OllamaLLMService)
 
 
-_llm_service: BaseLLMService | None = None
+_llm_service_cache: dict[str, BaseLLMService] = {}
 
 
-def get_llm_service() -> BaseLLMService:
-    """Get LLM service instance (singleton)"""
-    global _llm_service
-
-    if _llm_service is None:
-        _llm_service = LLMServiceFactory.create()
-
-    return _llm_service
+def get_llm_service(provider: str | None) -> BaseLLMService:
+    """Get LLM service instance (singleton per provider)."""
+    if not provider:
+        raise ValueError("provider is required")
+    key = provider.strip().lower()
+    service = _llm_service_cache.get(key)
+    if service is None:
+        service = LLMServiceFactory.create(provider=key)
+        _llm_service_cache[key] = service
+    return service

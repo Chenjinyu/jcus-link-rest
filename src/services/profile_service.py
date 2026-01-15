@@ -7,11 +7,8 @@ import json
 from typing import Any, Iterable
 
 from src.config import settings
-from src.libs.vector_database import VectorDatabase
-from src.services.llm_service import (
-    create_embedding,
-    get_default_embedding_model,
-)
+from src.libs.vector_database import EmbeddingModel, VectorDatabase
+from src.services import llm_service
 
 
 def _stable_json(data: Any) -> str:
@@ -21,12 +18,9 @@ def _stable_json(data: Any) -> str:
 class ProfileService:
     """Service for fetching profile data and running vector search."""
 
-    def __init__(self, provider_name: str) -> None:
+    def __init__(self) -> None:
         if not settings.supabase_url or not settings.supabase_key:
             raise ValueError("Supabase credentials are required")
-
-        self._provider_name = provider_name or settings.default_llm_provider
-        self.default_model = get_default_embedding_model(provider_name)
 
         self._db = VectorDatabase(
             supabase_url=settings.supabase_url,
@@ -40,25 +34,18 @@ class ProfileService:
         user_id: str,
         top_k: int,
         threshold: float,
-        embedding_model_name: str | None = None,
+        embedding_model: EmbeddingModel,
     ) -> list[dict[str, Any]]:
-        resolved_model_name = embedding_model_name
-        if not resolved_model_name:
-            default_model = get_default_embedding_model(self._provider_name)
-            resolved_model_name = default_model.name if default_model else None
-        if not resolved_model_name:
-            raise ValueError("No embedding model configured for search")
-        query_embedding = await create_embedding(
+        query_embedding = await llm_service.embed_text(
             job_description,
-            model_name=resolved_model_name,
-            provider=self._provider_name,
+            model=embedding_model,
         )
         return await self._db.search_rpc_function(
             query=job_description,
             user_id=user_id,
             threshold=threshold,
             limit=top_k,
-            model_name=resolved_model_name,
+            model_name=embedding_model.name,
             query_embedding=query_embedding,
         )
 
