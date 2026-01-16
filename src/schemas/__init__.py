@@ -4,10 +4,12 @@
 from .domain_schema import (
     ResumeMatch,
     JobAnalysis,
+    ResumeSchema,
 )
 
 __all__ = [
     # Domain Schemas
     "ResumeMatch",
     "JobAnalysis",
+    "ResumeSchema",
 ]

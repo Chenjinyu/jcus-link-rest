@@ -195,7 +195,7 @@ def run_examples(base_url: str) -> int:
         )
         _print("resources:read prompts/resume_generation_prompt", result)
 
-    except urllib.error.HTTPError as exc:
+    except urllib.error.HTTPError as exc: # type: ignore
         print(f"HTTP error: {exc.code} {exc.reason}")
         print(exc.read().decode("utf-8"))
         return 1
