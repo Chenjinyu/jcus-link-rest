@@ -12,7 +12,7 @@ import json
 import sys
 import urllib.request
 from typing import Any
-
+from src.libs.pdf_generator import generate_resume_pdf_from_json
 
 def _post_json(url: str, payload: dict[str, Any]) -> dict[str, Any]:
     data = json.dumps(payload).encode("utf-8")
@@ -206,6 +206,12 @@ def run_examples(base_url: str) -> int:
     return 0
 
 
+def generate_pdf_resume():
+    generate_resume_pdf_from_json(
+        "src/libs/resume_data.json",
+    )
+    print("Wrote resume_output.pdf")
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Call MCP tools/prompts/resources.")
     parser.add_argument(
@@ -239,4 +245,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # sys.exit(main())
+    generate_pdf_resume()
