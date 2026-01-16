@@ -19,13 +19,10 @@ from src.services.profile_service import get_profile_service, ProfileService
 from src.mcp.prompts import (
     build_analysis_prompt,
     build_resume_from_source_prompt,
-    build_resume_prompt,
 )
 from src.schemas import (
     ResumeMatch,
     JobAnalysis,
-    SearchMatchesRequest,
-    SearchMatchesResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -80,7 +77,8 @@ class MatchSummary:
 class ResumeService:
     """Service for resume-related operations"""
 
-    def __init__(self) -> None:
+    def __init__(self, user_id:str) -> None:
+        self.user_id = user_id
         self.profile_service: ProfileService | None
         try:
             self.profile_service = get_profile_service()
@@ -93,12 +91,6 @@ class ResumeService:
             ttl_seconds=settings.resume_cache_ttl_seconds,
             cache_path=settings.resume_cache_path,
         )
-
-    def _resolve_user_id(self, user_id: str | None) -> str:
-        resolved = user_id or settings.author_user_id
-        if not resolved:
-            raise ValueError("user_id is required (set author_user_id or pass user_id)")
-        return resolved
 
     def _map_search_results_to_matches(
         self,
@@ -136,7 +128,6 @@ class ResumeService:
     async def _search_profile_matches(
         self,
         job_description: str,
-        user_id: str,
         top_k: int,
         embedding_model: EmbeddingModel,
     ) -> tuple[list[dict[str, Any]], list[ResumeMatch]]:
@@ -144,7 +135,7 @@ class ResumeService:
             return [], []
         raw_results = await self.profile_service.search_job_matches(
             job_description=job_description,
-            user_id=user_id,
+            user_id=self.user_id,
             top_k=top_k,
             threshold=settings.min_similarity_threshold,
             embedding_model=embedding_model,
@@ -152,30 +143,7 @@ class ResumeService:
         matches = self._map_search_results_to_matches(raw_results)
         return raw_results, matches
 
-    async def search_matching_resumes(
-        self,
-        request: SearchMatchesRequest,
-        provider: str,
-        embedding_model: EmbeddingModel,
-        user_id: str | None = None,
-    ) -> SearchMatchesResponse:
-        """Search for resumes matching the job description"""
-
-        logger.info("Searching for top %s matching resumes", request.top_k)
-
-        resolved_user_id = self._resolve_user_id(user_id)
-        _, matches = await self._search_profile_matches(
-            request.job_description,
-            resolved_user_id,
-            request.top_k,
-            embedding_model,
-        )
-
-        logger.info("Found %s matching resumes", len(matches))
-
-        return SearchMatchesResponse(matches=matches, total_found=len(matches))
-
-    async def analyze_job_description(
+    async def _serialize_job_reqs(
         self,
         job_description: str,
         provider: str,
@@ -186,7 +154,7 @@ class ResumeService:
 
         llm_service = get_llm_service(provider)
         prompt = build_analysis_prompt(job_description)
-        response = await llm_service.generate_text_response(prompt)
+        response = await llm_service.extract_jobs_insights(prompt)
         analysis_data = _parse_analysis_response(response)
 
         return JobAnalysis(
@@ -199,13 +167,13 @@ class ResumeService:
             ),
         )
 
-    async def summarize_matches(
+    async def _summarize_matches(
         self,
         job_description: str,
         matches: list[ResumeMatch],
         provider: str,
     ) -> MatchSummary:
-        analysis = await self.analyze_job_description(job_description, provider)
+        analysis = await self._serialize_job_reqs(job_description, provider)
         required_skills = {skill.lower() for skill in analysis.required_skills}
         matched_skill_pool = {skill.lower() for m in matches for skill in m.skills}
         matched_skills = sorted({skill for skill in required_skills & matched_skill_pool})
@@ -242,50 +210,24 @@ class ResumeService:
             missing_skills=missing_skills,
         )
 
-    async def generate_optimized_resume(
-        self,
-        job_description: str,
-        matched_resumes: List[ResumeMatch],
-        provider: str,
-        stream: bool = True,
-    ) -> AsyncIterator[str]:
-        """Generate an optimized resume based on job description and matches"""
-
-        logger.info("Generating resume for %s matched profiles", len(matched_resumes))
-
-        llm_service = get_llm_service(provider)
-        prompt = build_resume_prompt(job_description, matched_resumes)
-        resume_generator = cast(
-            AsyncGenerator[str, None],
-            llm_service.generate_stream_text(prompt, stream=stream),
-        )
-        async for chunk in resume_generator:
-            yield chunk
-
-        logger.info("Resume generation complete")
-
     async def generate_updated_resume(
         self,
         job_description: str,
         provider: str,
         embedding_model: EmbeddingModel,
         top_k: int = 5,
-        user_id: str | None = None,
         use_cache: bool = True,
     ) -> dict[str, Any]:
-        resolved_user_id = self._resolve_user_id(user_id)
-
         if self.profile_service is None:
             raise ValueError("Profile service unavailable")
 
         raw_matches, matches = await self._search_profile_matches(
             job_description,
-            resolved_user_id,
             top_k,
             embedding_model,
         )
 
-        match_summary = await self.summarize_matches(job_description, matches, provider)
+        match_summary = await self._summarize_matches(job_description, matches, provider)
 
         profile_ids = [
             str(match.get("profile_data_id"))
@@ -293,7 +235,7 @@ class ResumeService:
             if match.get("profile_data_id")
         ]
         resume_source = self.profile_service.get_resume_source(
-            user_id=resolved_user_id,
+            user_id=self.user_id,
             profile_ids=profile_ids or None,
         )
         profile_fingerprint = self.profile_service.fingerprint_resume_source(resume_source)
@@ -321,7 +263,7 @@ class ResumeService:
             resume_source,
             match_summary.to_dict(),
         )
-        resume_text = await get_llm_service(provider).generate_text_response(prompt)
+        resume_text = await get_llm_service(provider).extract_jobs_insights(prompt)
 
         await self.resume_cache.set(
             ResumeCacheEntry(
@@ -334,7 +276,7 @@ class ResumeService:
                 + timedelta(seconds=settings.resume_cache_ttl_seconds),
                 metadata={
                     "profile_fingerprint": profile_fingerprint,
-                    "user_id": resolved_user_id,
+                    "user_id": self.user_id,
                     "match_summary": match_summary.to_dict(),
                 },
             )
@@ -350,15 +292,12 @@ class ResumeService:
     async def generate_latest_resume(
         self,
         provider: str,
-        user_id: str | None = None,
         use_cache: bool = True,
     ) -> dict[str, Any]:
-        resolved_user_id = self._resolve_user_id(user_id)
-
         if self.profile_service is None:
             raise ValueError("Profile service unavailable")
 
-        resume_source = self.profile_service.get_resume_source(user_id=resolved_user_id)
+        resume_source = self.profile_service.get_resume_source(user_id=self.user_id)
         profile_fingerprint = self.profile_service.fingerprint_resume_source(resume_source)
         cache_key = self.resume_cache.build_key("latest_resume", profile_fingerprint)
 
@@ -391,7 +330,7 @@ class ResumeService:
             resume_source,
             match_summary.to_dict(),
         )
-        resume_text = await get_llm_service(provider).generate_text_response(prompt)
+        resume_text = await get_llm_service(provider).extract_jobs_insights(prompt)
 
         await self.resume_cache.set(
             ResumeCacheEntry(
@@ -404,7 +343,7 @@ class ResumeService:
                 + timedelta(seconds=settings.resume_cache_ttl_seconds),
                 metadata={
                     "profile_fingerprint": profile_fingerprint,
-                    "user_id": resolved_user_id,
+                    "user_id": self.user_id,
                 },
             )
         )
@@ -419,11 +358,11 @@ class ResumeService:
 _resume_service: ResumeService | None = None
 
 
-def get_resume_service() -> ResumeService:
+def get_resume_service(user_id: str | None = None) -> ResumeService:
     """Get resume service instance (singleton)"""
     global _resume_service
-
+    user_id = user_id or settings.author_user_id or "default_user"
     if _resume_service is None:
-        _resume_service = ResumeService()
+        _resume_service = ResumeService(user_id=user_id)
 
     return _resume_service

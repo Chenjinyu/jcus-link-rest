@@ -1,0 +1,223 @@
+{
+    "basic_info": {
+        "name": "Jinyu Chen",
+        "address": "3866 Brandon Park Dr, Garland, TX. 75044",
+        "mobile": "(940)465-8685",
+        "email": "inyu2010.chen@gmail.com",
+        "github": "https://github.com/Chenjinyu",
+        "linkedin": "https://www.linkedin.com/in/jinyu-chen-enyclife/"
+    },
+    "professional_experience":[
+        {
+            "company": "Capital One",
+            "city": "Plano",
+            "state_or_country": "TX",
+            "start_date": "Sep 2019",
+            "end_date": "Sep 2025",
+            "job_title": "Principle Software Engineer",
+            "skill_keywords": "Keywords: ALB, Angular, Apache Airflow, AWS Lambda, CI/CD Jenkins, CloudFormation, CloudWatch, CSS, Docker, Django, DynamoDB, ECS, EFG, EventBridge, FastAPI, Figma, Flask, FlaskAPI, Grafana, HTML, Kubernetes, NestJS, Node.js, OAuth (PoP, Bearer), Pandas, Postman, PostgreSQL, Pydantic, Python, Pytest, REST APIs, Redshift, Route53, S3, Step Functions, Splunk, Snowflake, SNS, Tableau, Terraform, TypeScript, etc.",
+            "positions": [
+                {
+                    "role": "Full Stack & Platform Engineer",
+                    "projects": [
+                        {
+                            "project_summary": "Built decoupled and monolith web applications",
+                            "project_details": [
+                                "Designed the Web UI/UX prototype with the Figma platform, and developed it into the real UI Pages (HTML, CSS, JavaScript, Bootstrap).",
+                                "Designed and built monolithic web applications with Django and Flask frameworks from scratch within Docker containers(Linux-based operating system).",
+                                "Built a robust, three-layer web architecture: Micro-Frontend (Angular, TypeScript, Lit.dev) for domain-based modular UI; Backend-for-Frontend (Node.js/NestJS, Flask) to aggregate and simplify APIs.",
+                                "Designed scalable Python REST APIs with FastAPI and AWS Lambda for low-latency, serverless workloads.",
+                                "Built and containerized Python microservices, automated CI/CD with Jenkins pipelines, and provisioned AWS with Terraform (e.g., SGs, IAM). Orchestrated services on Amazon ECS (Fargate) with autoscaling and CloudWatch monitoring.",
+                                "Integrated event-driven workflows with SNS, S3, and DynamoDB to trigger downstream services (email alerts, data processing)."
+                            ]
+                        },
+                        {
+                            "project_summary": "Designed and implemented an event-driven data processing system using AWS Lambda and EventBridge with AWS SAM.",
+                            "project_details": [
+                                "Extract data from static storage(S3), real-time streams(Kafka)",
+                                "Standardize heterogeneous source formats(CSV, JSON, Parquet, etc) into a unified schema using Python, with schema validation and quality checks integrated at ingestion",
+                                "Load transformed datasets into Snowflake with a multi-layer architecture.",
+                                "Developed and optimized the SQL queries for metrics visualization on Tableau."
+                            ]
+                        },
+                        {
+                            "project_summary": "Designed and built a scalable Apache Airflow platform supporting CI/CD-based onboarding for internal users.",
+                            "project_details": [
+                                "Deployed Apache Airflow to Amazon ECS with a custom Docker image and ECS Service autoscaling, ensuring elastic capacity for webserver/scheduler/workers.",
+                                "Built an event-driven DAG onboarding pipeline: repositories opt in by declaring the dag-job-onboarding gear in the user's Bogiefile. Once PR is merged, Jenkins triggers the AWS Lambda that copies DAGs from the repo to a shared Amazon EFS mount consumed by Airflow.",
+                                "Wired Airflow to the EFS DAG directory so the UI refreshes automatically and new DAGs appear within seconds—no manual redeploys."
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "role": "Engineering Lead and Scrum Master",
+                    "projects": [
+                        {
+                            "project_summary": null,
+                            "project_details": [
+                                "Led the successful migration of legacy data-processing jobs from third-party systems to internal platforms.",
+                                "Created detailed roadmaps, defined scope boundaries, and executed stakeholder alignment across multiple LOBs.",
+                                "Delivered production-ready migration solutions with POC validation, phased rollout, and full documentation.",
+                                "Hosted knowledge-sharing sessions to onboard cross-functional teams and standardize platform usage.",
+                                "Facilitated Agile ceremonies as Scrum Master, including daily stand-ups, sprint planning, backlog refinement, and sprint retrospectives, ensuring continuous delivery and process improvement across sprints.",
+                                "Coached team members on Agile best practices to improve collaboration, transparency, and delivery velocity."
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "role": "Platform API Coach",
+                    "projects": [
+                        {
+                            "project_summary": null,
+                            "project_details": [
+                                "Guided teams in designing modular, scalable, and user-centric API platforms aligned with OpenAPI standards and OAuth security models."
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+          "company": "Rewardstyle",
+          "city": "Dallas",
+          "state_or_country": "TX",
+          "start_date": "Jun 2018",
+          "end_date": "Sep 2019",
+          "job_title": "Software Engineer II [GoLang]",
+          "skill_keywords": null,
+          "positions": [
+              {
+                  "role": null,
+                  "projects": [
+                      {
+                          "project_summary": null,
+                          "project_details": [
+                              "Built a Golang-based URL commission tracking service with REST APIs and secure token authentication.",
+                              "Developed daily ingestion pipelines using Python to process affiliate data at scale.",
+                              "Wrote automated tests with Pytest and Golang's native testing tools.",
+                              "Provisioned S3 data lake infrastructure using AWS CloudFormation and automated data movement to Redshift, Cassandra, and MySQL via AWS Glue.",
+                              "Implemented CI/CD pipelines using CircleCI, Jenkins, and Ansible; deployed containerized services via EC2 and ELB.",
+                              "Instrumented system metrics and alerts with Prometheus, CloudWatch, Datadog, and Periscope."
+                          ]
+                      }
+                  ]
+              }
+          ]
+        },
+        {
+          "company": "SiSTeR Technologies",
+          "city": "Addison",
+          "state_or_country": "TX",
+          "start_date": "Jun 2016",
+          "end_date": "Jun 2018",
+          "job_title": "Sr. Full Stack Python Developer",
+          "skill_keywords": null,
+          "positions": [
+              {
+                  "role": null,
+                  "projects": [
+                      {
+                          "project_summary": null,
+                          "project_details": [
+                              "Developed Python libraries and Django REST APIs for data ingestion into Elasticsearch and S3.",
+                              "Created AngularJS-based frontends with AJAX integrations and dynamic data rendering.",
+                              "Built scalable Java Spring Boot microservices and managed Nginx/Gunicorn web servers on EC2 Linux instances."
+                          ]
+                      }
+                  ]
+              }
+          ]
+        },
+        {
+          "company": "Symantec Chengdu R&D Center",
+          "city": "Chengdu",
+          "state_or_country": "China",
+          "start_date": "Dec 2012",
+          "end_date": "Apr 2015",
+          "job_title": "SQA Specialist",
+          "skill_keywords": null,
+          "positions": [
+              {
+                  "role": null,
+                  "projects": [
+                      {
+                          "project_summary": null,
+                          "project_details": [
+                              "Delivered full-stack web apps using PHP Symfony and built REST APIs to support automated testing workflows.",
+                              "Created and executed Selenium-based test suites and processed XML data using MSSQL stored procedures.",
+                              "Administered Jenkins for CI/CD pipelines and provided Python training for internal teams.",
+                              "Presented best practices in CI/CD at Cutting Edge 2014."
+                          ]
+                      }
+                  ]
+              }
+          ]
+        },
+        {
+          "company": "Tieto Information Technology",
+          "city": "Chengdu",
+          "state_or_country": "China",
+          "start_date": "Jan 2009",
+          "end_date": "Dec 2012",
+          "job_title": "Software Developer",
+          "skill_keywords": null,
+          "positions": [
+              {
+                  "role": null,
+                  "projects": [
+                      {
+                          "project_summary": null,
+                          "project_details": [
+                              "Developed core Python libraries and automated test frameworks for Java/QT applications.",
+                              "Built QT-based mobile apps and Java SWT desktop apps.",
+                              "Wrote Ruby-based UI automation for QT, running under Jenkins and Robot Framework.",
+                              "Participated in Agile teams and documented progress via JIRA."
+                          ]
+                      }
+                  ]
+              }
+          ]
+        }
+    ],
+    "education": [
+        {
+            "institution": "University of Texas at Dallas",
+            "degree": "Master's In Systems Engineering and Management",
+            "start_date": "2017",
+            "end_date": "2019"
+        },
+        {
+            "institution": "University of Electronic Science and Technology of China",
+            "degree": "Bachelor of Engineering in Computer Science",
+            "start_date": "2006",
+            "end_date": "2010"
+        }
+    ],
+    "licenses_and_certifications": [
+        {
+            "type": "certification",
+            "name": "AWS Certified Solution Architect - Associate",
+            "issuer": "Amazon Web Services",
+            "validation_number": "W2JEGXYBKEQEQQ9H"
+        },
+        { 
+            "type": "certification",
+            "name": "AWS Certified Developer - Associate",
+            "issuer": "Amazon Web Services",
+            "validation_number": "E2Z2HYTC3FVQQ3WE"
+        },
+        {
+            "type": "certification",
+            "name": "AWS Certified Developer - Associate",
+            "issuer": "Amazon Web Services",
+            "validation_number": "GX8SYBPFAQBE"
+        },
+        {
+            "type": "badge",
+            "name": "AWS Knowledge: Serverless",
+            "issuer": "Amazon Web Services"
+        }
+    ]
+}

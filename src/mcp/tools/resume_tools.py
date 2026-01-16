@@ -51,7 +51,7 @@ def _get_default_embedding_model(provider: str) -> EmbeddingModel | None:
     return models[0] if models else None
 
 
-def _resolve_user_id(user_id: str | None) -> str:
+def _get_user_id(user_id: str | None) -> str:
     resolved = user_id or settings.author_user_id
     if not resolved:
         raise ValueError("user_id is required (set author_user_id or pass user_id)")
@@ -131,8 +131,7 @@ async def _extract_job_description(
 
 
 def register_tools(mcp: FastMCP) -> None:
-    resume_service = get_resume_service()
-
+    
     @mcp.tool()
     async def list_matched_job_skills(
         input_data: str,
@@ -174,7 +173,7 @@ def register_tools(mcp: FastMCP) -> None:
             if not job_description.strip():
                 raise ValueError("Job description cannot be empty")
 
-            resolved_user_id = _resolve_user_id(user_id)
+            resolved_user_id = _get_user_id(user_id)
 
             if ctx:
                 await ctx.info("Running similarity search against profile data")
@@ -184,13 +183,12 @@ def register_tools(mcp: FastMCP) -> None:
                 embedding_model_name=embedding_model_name,
             )
             try:
-                profile_service = get_profile_service()
+                profile_service = get_profile_service(user_id=resolved_user_id)
             except Exception as exc:
                 raise ValueError(f"Profile service unavailable: {exc}") from exc
 
             matches = await profile_service.search_job_matches(
                 job_description=job_description,
-                user_id=resolved_user_id,
                 top_k=top_k,
                 threshold=threshold,
                 embedding_model=resolved_model,
@@ -254,12 +252,12 @@ def register_tools(mcp: FastMCP) -> None:
                 provider=provider,
                 embedding_model_name=embedding_model_name,
             )
+            resume_service = get_resume_service(user_id=_get_user_id(user_id))
             result = await resume_service.generate_updated_resume(
                 job_description=job_description,
                 provider=resolved_provider,
                 embedding_model=resolved_model,
                 top_k=top_k,
-                user_id=user_id,
                 use_cache=use_cache,
             )
 
@@ -300,9 +298,9 @@ def register_tools(mcp: FastMCP) -> None:
             resolved_provider = (provider or settings.default_llm_provider or "").strip().lower()
             if not resolved_provider:
                 raise ValueError("LLM provider is required")
+            resume_service = get_resume_service(user_id=_get_user_id(user_id))
             result = await resume_service.generate_latest_resume(
                 provider=resolved_provider,
-                user_id=user_id,
                 use_cache=use_cache,
             )
 
@@ -333,7 +331,7 @@ def register_tools(mcp: FastMCP) -> None:
         try:
             if ctx:
                 await ctx.info("Fetching resume cache stats")
-
+            resume_service = get_resume_service()
             stats = resume_service.resume_cache.stats()
             return json.dumps(
                 {"status": "success", "cache": stats},

@@ -11,6 +11,7 @@ from .llm_service import (
 )
 from .resume_service import ResumeService, get_resume_service
 from .profile_service import ProfileService, get_profile_service
+from . import llm_embedding_service
 
 __all__ = [
     "BaseLLMService",
@@ -24,4 +25,5 @@ __all__ = [
     "get_resume_service",
     "ProfileService",
     "get_profile_service",
+    "llm_embedding_service",
 ]

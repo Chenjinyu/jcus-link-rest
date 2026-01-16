@@ -105,7 +105,7 @@ Return a professional resume in markdown with:
 
 def register_prompts(mcp: FastMCP) -> None:
     @mcp.prompt()
-    async def resume_generation_prompt(
+    async def resume_generation_prompt( 
         job_description: str,
         matched_resumes: list[dict[str, Any]] | None = None,
         ctx: Context | None = None,

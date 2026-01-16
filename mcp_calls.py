@@ -114,7 +114,7 @@ def run_examples(base_url: str) -> int:
 
         result = call_tool(
             base_url,
-            "generate_updated_resume",
+            "extract_jobs_insights",
             {
                 "job_description": "We need a backend engineer with FastAPI and AWS.",
                 "top_k": 5,
@@ -122,7 +122,7 @@ def run_examples(base_url: str) -> int:
             },
             request_id,
         )
-        _print("tool:generate_updated_resume", result)
+        _print("tool:extract_jobs_insights", result)
         request_id += 1
 
         result = call_tool(

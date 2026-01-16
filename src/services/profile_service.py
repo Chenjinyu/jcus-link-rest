@@ -8,7 +8,7 @@ from typing import Any, Iterable
 
 from src.config import settings
 from src.libs.vector_database import EmbeddingModel, VectorDatabase
-from src.services import llm_service
+from src.services import llm_embedding_service
 
 
 def _stable_json(data: Any) -> str:
@@ -18,10 +18,10 @@ def _stable_json(data: Any) -> str:
 class ProfileService:
     """Service for fetching profile data and running vector search."""
 
-    def __init__(self) -> None:
+    def __init__(self, user_id: str) -> None:
         if not settings.supabase_url or not settings.supabase_key:
             raise ValueError("Supabase credentials are required")
-
+        self.user_id = user_id
         self._db = VectorDatabase(
             supabase_url=settings.supabase_url,
             supabase_key=settings.supabase_key,
@@ -31,18 +31,17 @@ class ProfileService:
     async def search_job_matches(
         self,
         job_description: str,
-        user_id: str,
         top_k: int,
         threshold: float,
         embedding_model: EmbeddingModel,
     ) -> list[dict[str, Any]]:
-        query_embedding = await llm_service.embed_text(
+        query_embedding = await llm_embedding_service.embed_text(
             job_description,
             model=embedding_model,
         )
         return await self._db.search_rpc_function(
             query=job_description,
-            user_id=user_id,
+            user_id=self.user_id,
             threshold=threshold,
             limit=top_k,
             model_name=embedding_model.name,
@@ -68,16 +67,15 @@ class ProfileService:
 
     def get_resume_source(
         self,
-        user_id: str,
         profile_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         if profile_ids:
             profile_data = self.get_profile_data_by_ids(profile_ids)
         else:
-            profile_data = self._db.get_profile_data_list(user_id=user_id)
-        personal_attributes = self._db.get_personal_attributes(user_id=user_id)
+            profile_data = self._db.get_profile_data_list(user_id=self.user_id)
+        personal_attributes = self._db.get_personal_attributes(user_id=self.user_id)
         return {
-            "user_id": user_id,
+            "user_id": self.user_id,
             "profile_data": profile_data,
             "personal_attributes": personal_attributes,
         }
@@ -95,8 +93,9 @@ class ProfileService:
 _profile_service: ProfileService | None = None
 
 
-def get_profile_service() -> ProfileService:
+def get_profile_service(user_id: str | None = None) -> ProfileService:
     global _profile_service
+    user_id = user_id or settings.author_user_id or "default_user"
     if _profile_service is None:
-        _profile_service = ProfileService()
+        _profile_service = ProfileService(user_id=user_id)
     return _profile_service
