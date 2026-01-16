@@ -88,3 +88,15 @@ class ResumeSchema(BaseModel):
     education: List[EducationEntry]
     licenses_and_certifications: List[CertificationEntry]
 
+
+class SerializedJobReqCategory(BaseModel):
+    """Structured job requirements grouped by category."""
+
+    work_experience: List[str] = Field(default_factory=list)
+    skills: List[str] = Field(default_factory=list)
+    education: List[str] = Field(default_factory=list)
+    certification: List[str] = Field(default_factory=list)
+    project: List[str] = Field(default_factory=list)
+    requirements: List[str] = Field(default_factory=list)
+    nice_to_have: List[str] = Field(default_factory=list)
+    responsibilities: List[str] = Field(default_factory=list)

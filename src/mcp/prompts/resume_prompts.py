@@ -70,6 +70,29 @@ Format as JSON.
 """
 
 
+def build_job_requirements_prompt(text: str) -> str:
+    return f"""You are categorizing a job description into structured buckets.
+
+Job Description:
+{text}
+
+Return JSON with the following keys, each containing a list of strings:
+- work_experience: roles, responsibilities, projects, impact
+- skills: explicit skills, tools, tech stacks
+- education: degrees, schools, majors
+- certification: certifications, badges, licenses
+- project: standalone projects (if separate from roles)
+- requirements: must-haves, minimum qualifications
+- nice_to_have: preferred qualifications
+- responsibilities: core duties (if not already in work_experience)
+
+Rules:
+- Use concise bullet-style strings.
+- Do not invent details.
+- Keep each entry self-contained for similarity search.
+"""
+
+
 def build_resume_from_source_prompt(
     job_description: str,
     resume_source: dict[str, Any],
@@ -125,6 +148,17 @@ def register_prompts(mcp: FastMCP) -> None:
         if ctx:
             await ctx.info("Building job analysis prompt")
         prompt = build_analysis_prompt(job_description)
+        return [{"role": "user", "content": prompt}]
+
+    @mcp.prompt()
+    async def job_requirements_prompt(
+        job_description: str,
+        ctx: Context | None = None,
+    ) -> list[dict[str, str]]:
+        """Prompt to categorize job requirements into buckets."""
+        if ctx:
+            await ctx.info("Building job requirements prompt")
+        prompt = build_job_requirements_prompt(job_description)
         return [{"role": "user", "content": prompt}]
 
     @mcp.prompt()

@@ -5,6 +5,7 @@ from .domain_schema import (
     ResumeMatch,
     JobAnalysis,
     ResumeSchema,
+    SerializedJobReqCategory,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "ResumeMatch",
     "JobAnalysis",
     "ResumeSchema",
+    "SerializedJobReqCategory",
 ]

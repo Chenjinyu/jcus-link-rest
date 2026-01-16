@@ -19,10 +19,12 @@ from src.services.profile_service import get_profile_service, ProfileService
 from src.mcp.prompts import (
     build_analysis_prompt,
     build_resume_from_source_prompt,
+    build_job_requirements_prompt,
 )
 from src.schemas import (
     ResumeMatch,
     JobAnalysis,
+    SerializedJobReqCategory,
 )
 
 logger = logging.getLogger(__name__)
@@ -53,6 +55,21 @@ def _parse_analysis_response(response: str | None) -> dict:
         return _default_analysis_result()
     if not isinstance(data, dict):
         return _default_analysis_result()
+    return data
+
+
+def _parse_job_requirements_response(response: str | None) -> dict:
+    if not response:
+        return {}
+    raw = response.strip()
+    if "{" in raw and "}" in raw:
+        raw = raw[raw.find("{") : raw.rfind("}") + 1]
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(data, dict):
+        return {}
     return data
 
 
@@ -209,6 +226,21 @@ class ResumeService:
             matched_skills=matched_skills,
             missing_skills=missing_skills,
         )
+
+    async def categorize_job_requirements(
+        self,
+        job_description: str,
+        provider: str,
+    ) -> SerializedJobReqCategory:
+        """Categorize job requirements into structured buckets."""
+        llm_service = get_llm_service(provider)
+        prompt = build_job_requirements_prompt(job_description)
+        response = await llm_service.extract_jobs_insights(prompt)
+        data = _parse_job_requirements_response(response)
+        try:
+            return SerializedJobReqCategory.model_validate(data)
+        except Exception:
+            return SerializedJobReqCategory()
 
     async def generate_updated_resume(
         self,
