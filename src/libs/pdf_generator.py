@@ -561,7 +561,7 @@ def generate_resume_pdf(data: dict[str, Any], output_path: str | Path) -> None:
 
     _build_professional_experience(
         story,
-        data.get("professional_experience", []) or [],
+        data.get("work_experience", []) or [],
         section,
         subheader,
         meta,
