@@ -8,7 +8,7 @@ vector_database.py fetches embedding models from Supabase and manages vector que
 import json
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import AsyncGenerator, AsyncIterator
+from typing import AsyncGenerator, AsyncIterator, Any
 
 import httpx
 import openai
@@ -17,7 +17,7 @@ from google import genai
 from src.config import settings
 
 
-class BaseLLMService(ABC):
+class BaseLLM(ABC):
     """
     Abstract base class for LLM services by following the dependency inversion principle,
     depending on abstractions rather than concrete implementations."""
@@ -50,16 +50,22 @@ class BaseLLMService(ABC):
     async def extract_jobs_insights(self, prompt: str) -> str:
         """Generate a full response for a prompt."""
         return await self._generate_text(prompt)
+    
+    @abstractmethod
+    async def generate_embeddings(self, text: str) -> list[float]:
+        """Generate embeddings from the provider configured on the model."""
+        raise NotImplementedError
+    
 
 
 LLMServiceFactoryCallable = Callable[
     [], # input args
-    BaseLLMService # return type
+    BaseLLM # return type
 ]
 _LLM_SERVICE_REGISTRY: dict[str, LLMServiceFactoryCallable] = {}
 
 
-def register_llm_service(provider: str, factory: LLMServiceFactoryCallable) -> None:
+def register_llm(provider: str, factory: LLMServiceFactoryCallable) -> None:
     """Register an LLM provider without modifying the factory implementation."""
     key = provider.strip().lower()
     if not key:
@@ -72,7 +78,7 @@ def available_llm_providers() -> list[str]:
     return sorted(_LLM_SERVICE_REGISTRY.keys())
 
 
-class GoogleLLMService(BaseLLMService):
+class GoogleLLM(BaseLLM):
     """Google Gemini LLM service implementation"""
 
     def __init__(self) -> None:
@@ -107,8 +113,23 @@ class GoogleLLMService(BaseLLMService):
         text = getattr(response, "text", None)
         return text or ""
 
+    async def generate_embeddings(self, text: str) -> list[float]:
+        """Generate embeddings from the provider configured on the model."""
+        result = self.client.models.embed_content(
+            model=settings.google_embedding_model_name,
+            contents=[text],
+            config={"output_dimensionality": 768},
+        )
+        # get embeded float list
+        embs = getattr(result, "embeddings", None)
+        if not embs:
+            raise ValueError("No embeddings returned from Google API")
+        embs_value = embs.values
+        if isinstance(embs_value, list) and len(embs_value) > 0:
+            return [float(x) for x in embs_value]
+        return []
 
-class OpenAILLMService(BaseLLMService):
+class OpenAILLM(BaseLLM):
     """OpenAI GPT service implementation"""
 
     def __init__(self) -> None:
@@ -149,8 +170,20 @@ class OpenAILLMService(BaseLLMService):
         message = response.choices[0].message
         return message.content or ""
 
+    async def generate_embeddings(self, text: str) -> list[float]:
+        request_params: dict[str, Any] = {
+            "model": settings.openai_embedding_model_name,
+            "dimensions": 768,
+            "input": text,
+        }
+        response = self.client.embeddings.create(**request_params)
+        resp_data = getattr(response, "data", None)
+        if not resp_data or len(resp_data) == 0:
+            return []
+        else:
+            return resp_data[0].embedding
 
-class OllamaLLMService(BaseLLMService):
+class OllamaLLM(BaseLLM):
     """Ollama LLM service implementation"""
 
     def __init__(self) -> None:
@@ -207,9 +240,11 @@ class LLMServiceFactory:
     """Factory for creating LLM service instances using a provider registry."""
 
     @staticmethod
-    def create(provider: str | None = None) -> BaseLLMService:
+    def create(provider: str | None = None) -> BaseLLM:
         """Create LLM service based on configuration or explicit provider."""
-        provider_key = (provider or settings.default_llm_provider).strip().lower()
+        provider_key = provider or settings.default_llm_provider
+        assert provider_key is not None, "LLM provider must be specified"
+        provider_key = provider_key.strip().lower()
         try:
             factory = _LLM_SERVICE_REGISTRY[provider_key]
         except KeyError as exc:
@@ -220,21 +255,14 @@ class LLMServiceFactory:
         return factory()
 
 
-register_llm_service("openai", OpenAILLMService)
-register_llm_service("google", GoogleLLMService)
-register_llm_service("ollama", OllamaLLMService)
+register_llm("openai", OpenAILLM)
+register_llm("google", GoogleLLM)
+register_llm("ollama", OllamaLLM)
+_llm: BaseLLM | None = None
 
-
-_llm_service_cache: dict[str, BaseLLMService] = {}
-
-
-def get_llm_service(provider: str | None) -> BaseLLMService:
+def get_llm() -> BaseLLM:
     """Get LLM service instance (singleton per provider)."""
-    if not provider:
-        raise ValueError("provider is required")
-    key = provider.strip().lower()
-    service = _llm_service_cache.get(key)
-    if service is None:
-        service = LLMServiceFactory.create(provider=key)
-        _llm_service_cache[key] = service
-    return service
+    global _llm
+    if _llm is None:
+        _llm = LLMServiceFactory.create()
+    return _llm
