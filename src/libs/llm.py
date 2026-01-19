@@ -120,14 +120,49 @@ class GoogleLLM(BaseLLM):
             contents=[text],
             config={"output_dimensionality": 768},
         )
-        # get embeded float list
-        embs = getattr(result, "embeddings", None)
-        if not embs:
+        # Try to find embeddings in several possible shapes
+        embs = None
+        if isinstance(result, dict):
+            embs = result.get("embeddings") or result.get("data") or result.get("embedding")
+        else:
+            embs = getattr(result, "embeddings", None)
+
+        # Fallback: maybe the result itself is a list of floats or lists
+        if embs is None and isinstance(result, list):
+            embs = result
+
+        if embs is None:
             raise ValueError("No embeddings returned from Google API")
-        embs_value = embs.values
-        if isinstance(embs_value, list) and len(embs_value) > 0:
-            return [float(x) for x in embs_value]
-        return []
+
+        # If embs is a flat list of numbers
+        if isinstance(embs, list) and all(isinstance(x, (int, float)) for x in embs):
+            return [float(x) for x in embs] # type: ignore
+
+        # If embs is a list whose first element contains the vector
+        if isinstance(embs, list) and len(embs) > 0:
+            first = embs[0]
+
+            # First element is a nested list of numbers
+            if isinstance(first, list) and all(isinstance(x, (int, float)) for x in first):
+                return [float(x) for x in first]
+
+            # First element is a dict-like object with 'values' or 'embedding'
+            if isinstance(first, dict):
+                vals = first.get("values") or first.get("embedding") or first.get("vector")
+                if isinstance(vals, list) and all(isinstance(x, (int, float)) for x in vals):
+                    return [float(x) for x in vals]
+
+            # First element may be an object with `.values`
+            vals = getattr(first, "values", None)
+            if isinstance(vals, list) and all(isinstance(x, (int, float)) for x in vals):
+                return [float(x) for x in vals]
+
+        # embs itself may be an object with `.values`
+        vals = getattr(embs, "values", None)
+        if isinstance(vals, list) and all(isinstance(x, (int, float)) for x in vals):
+            return [float(x) for x in vals]
+
+        raise ValueError("Unsupported embeddings format returned from Google API")
 
 class OpenAILLM(BaseLLM):
     """OpenAI GPT service implementation"""
@@ -234,6 +269,37 @@ class OllamaLLM(BaseLLM):
             response.raise_for_status()
             data = response.json()
             return data.get("response", "")
+    
+    async def generate_embeddings(self, text: str) -> list[float]:
+        payload = {
+            "model": settings.ollama_embedding_model_name,
+            "prompt": text,
+        }
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"{self.base_url}/api/embeddings",
+                json=payload,
+                timeout=settings.ollama_timeout_seconds,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        # common shapes: {"embedding": [...] } or {"embeddings":[{...}]} or [...]
+        emb = data.get("embedding") or data.get("embeddings") or data.get("vector") or data
+        # if top-level list of numbers
+        if isinstance(emb, list) and all(isinstance(x, (int, float)) for x in emb):
+            return [float(x) for x in emb]
+        # if embeddings is a list with first element containing vector
+        if isinstance(emb, list) and len(emb) > 0:
+            first = emb[0]
+            if isinstance(first, list) and all(isinstance(x, (int, float)) for x in first):
+                return [float(x) for x in first]
+            if isinstance(first, dict):
+                vals = first.get("values") or first.get("embedding") or first.get("vector")
+                if isinstance(vals, list) and all(isinstance(x, (int, float)) for x in vals):
+                    return [float(x) for x in vals]
+
+        raise ValueError("Unsupported embeddings format returned from Ollama")
 
 
 class LLMServiceFactory:

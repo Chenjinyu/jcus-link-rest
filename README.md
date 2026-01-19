@@ -37,7 +37,7 @@ exposes `embed_text`, `generate_stream_text`, and `generate_text_response` for e
 and text generation.
 
 ### Tools
-1. List matched job skills
+1.1. get matched job experience by provide text
 ```sh
 curl -s http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
@@ -47,17 +47,36 @@ curl -s http://localhost:8000/mcp \
       "id": 1,
       "method": "tools/call",
       "params": {
-        "name": "list_matched_job_skills",
+        "name": "generate_matched_resume",
         "arguments": {
           "input_type": "text",
           "input_data": "We need a backend engineer with FastAPI and AWS.",
-          "top_k": 5,
+          "top_k": 10,
           "threshold": 0.5
         }
       }
     }'
 ```
-
+1.2. get matched job experience by providing url
+```sh
+  curl -s http://localhost:8001/mcp \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
+    -d '{
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "tools/call",
+      "params": {
+        "name": "generate_matched_resume",
+        "arguments": {
+          "input_type": "url",
+          "input_data": "https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite/details/Senior-Software-Engineer--AI-Inference-Systems_JR2008495?q=software&locationHierarchy1=2fcb99c455831013ea529c3b93ba3236",
+          "top_k": 10,
+          "threshold": 0.5
+        }
+      }
+    }'
+```
 2. generate a latest/updated resume
 ```sh
 curl -s http://localhost:8000/mcp \

@@ -2,6 +2,7 @@
 
 from .resume_prompts import (
     build_analysis_prompt,
+    build_job_requirements_prompt,
     build_resume_from_source_prompt,
     build_resume_prompt,
     register_prompts,
@@ -9,6 +10,7 @@ from .resume_prompts import (
 
 __all__ = [
     "build_analysis_prompt",
+    "build_job_requirements_prompt",
     "build_resume_from_source_prompt",
     "build_resume_prompt",
     "register_prompts",

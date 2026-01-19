@@ -27,6 +27,7 @@ class AppSettings(BaseSettings):
     app_version: str = "1.0.0"
     debug: bool = False
     # Profile/Resume Data
+    user_id: str | None = "jinyu.chen"
     author_user_id: str | None = "jinyu.chen"
     
     # Server
@@ -45,8 +46,8 @@ class AppSettings(BaseSettings):
     
     # Vector Database - Primary: Supabase
     vector_db_type: str = "supabase"  # supabase, chromadb
-    supabase_url: str | None = None
-    supabase_key: str | None = None
+    supabase_url: str | None = os.environ.get("SUPABASE_URL", None)
+    supabase_key: str | None = os.environ.get("SUPABASE_KEY", None)
     supabase_postgres_url: str | None = Field(
         default=None,
         validation_alias=AliasChoices("SUPABASE_POSTGRES_URL", "POSTGRES_URL_NON_POOLING"),
@@ -59,13 +60,17 @@ class AppSettings(BaseSettings):
     chromadb_host: str | None = None
     chromadb_port: int | None = None
     chromadb_collection: str = "resumes"
-    
+
+    # API Keys
     openai_api_key: str | None = None
     google_api_key: str | None = None
-    default_llm_provider: str | None = None # openai, google, ollama
+    # Embedding Model
     default_embedding_model_name: str | None = None
-    
+    ollama_embedding_model_name: str = "nomic-embed-text"
+    google_embedding_model_name: str  = "text-embedding-004"
+    openai_embedding_model_name: str = "text-embedding-3-small"
     # LLM Models
+    default_llm_provider: str | None = "ollama" # openai, google, ollama
     openai_model: str = "gpt-4o-mini"
     google_model: str = "gemini-1.5-flash"
     ollama_model: str = "llama3.1:8b"
@@ -93,7 +98,7 @@ class AppSettings(BaseSettings):
     
     # Resume Generation
     default_top_k: int = 5
-    min_similarity_threshold: float = 0.5
+    min_similarity_threshold: float = 0.6
 
     # Resume Cache
     resume_cache_ttl_seconds: int = 24 * 60 * 60
@@ -130,12 +135,15 @@ class ProdSettings(AppSettings):
 
 @lru_cache()
 def get_settings() -> AppSettings:
-    """Get cached settings instance."""
+    """Get cached settings instance and resolve derived defaults."""
     app_env = os.environ.get("APP_ENV", "development").strip().lower()
+    settings: AppSettings
     if app_env == "production":
-        return ProdSettings()
-    return DevSettings()
+        settings = ProdSettings()
+    else:
+        settings = DevSettings()
 
+    return settings
 
 # Convenience function to get settings
 settings = get_settings()

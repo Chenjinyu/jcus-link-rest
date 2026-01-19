@@ -2,7 +2,7 @@
 """
 Document parser for various file formats (PDF, DOCX, HTML, TXT, URL)
 """
-
+import base64
 import logging
 import requests
 import validators
@@ -139,12 +139,29 @@ class DocumentParser:
             
             soup = BeautifulSoup(content, 'lxml')
             
+            # collect title, meta content, canonical, noscript, and body text
+            title = (soup.title.string or "").strip() if soup.title else ""
+            meta_contents = [
+                m.get("content", "").strip()
+                for m in soup.find_all("meta")
+                if m.get("content")
+            ]
+            canonical = ""
+            link = soup.find("link", rel="canonical")
+            if link and link.get("href"):
+                canonical = link["href"].strip()
             # Remove script and style elements
             for script in soup(["script", "style"]):
                 script.decompose()
             
             # Get text
-            text = soup.get_text()
+            noscript_text = " ".join(ns.get_text(" ", strip=True) for ns in soup.find_all("noscript"))
+            body_text = soup.get_text(separator="\n", strip=True)
+
+            parts = [title] + meta_contents + ([canonical] if canonical else []) + ([noscript_text] if noscript_text else []) + [body_text]
+            text = "\n".join(p for p in parts if p)
+            # normalize whitespace a bit
+            text = "\n".join(line for line in (ln.strip() for ln in text.splitlines()) if line)
             
             # Clean up text
             lines = (line.strip() for line in text.splitlines())
@@ -280,3 +297,32 @@ def get_document_parser() -> DocumentParser:
     
     return _document_parser
 
+
+async def parser_job_description(
+    input_data: str,
+    input_type: str,
+    filename: str | None,
+) -> str:
+    # init doc parser
+    parser = get_document_parser()
+
+    if input_type == "url":
+        if not settings.allow_url_uploads:
+            raise ValueError("URL uploads are not enabled")
+        return await parser.parse(input_data, is_url=True)
+
+    if input_type == "file":
+        if not filename:
+            raise ValueError("filename is required for file input")
+        try:
+            file_bytes = base64.b64decode(input_data)
+        except Exception as exc:
+            raise ValueError(f"Invalid base64 encoding: {exc}") from exc
+        if len(file_bytes) > settings.max_upload_size:
+            raise ValueError(
+                f"File size exceeds maximum of {settings.max_upload_size} bytes"
+            )
+        file_type = parser.detect_file_type(filename)
+        return await parser.parse(file_bytes, file_type, False)
+
+    return input_data

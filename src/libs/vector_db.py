@@ -31,6 +31,8 @@ class VectorDB:
         self.supabase_db: Client = create_client(self.supabase_url, self.supabase_key)
         self.pg_pool: asyncpg.pool.Pool | None = None
     
+    def get_supabase_db_client(self):
+        return self.supabase_db
     
     async def init_pool(self):
         """Initialize asyncpg connection pool"""
@@ -81,3 +83,5 @@ class VectorDB:
             return [dict(row) for row in result]
         finally:
             await self.release_connection(conn)
+            
+            

@@ -1,6 +1,6 @@
 import pytest
 
-from src.services.llm_service import BaseLLMService
+from libs.llm import BaseLLMService
 
 
 class DummyLLMService(BaseLLMService):

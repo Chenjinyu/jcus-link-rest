@@ -2,9 +2,31 @@
 """
 Domain-specific data schema with Pydantic models
 """
-
+from pathlib import Path
+import json
 from pydantic import BaseModel, Field
 from typing import List, Optional
+
+_TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "libs" / "resume_template.json"
+
+def _load_resume_template() -> dict:
+    try:
+        with _TEMPLATE_PATH.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def _default_basic_info() -> BasicInfo:
+    data = _load_resume_template().get("basic_info", {})
+    return BasicInfo(**data)
+
+def _default_education() -> list[EducationEntry]:
+    items = _load_resume_template().get("education", []) or []
+    return [EducationEntry(**it) for it in items]
+
+def _default_licenses() -> list[CertificationEntry]:
+    items = _load_resume_template().get("licenses_and_certifications", []) or []
+    return [CertificationEntry(**it) for it in items]
 
 
 class ResumeMatch(BaseModel):
@@ -83,10 +105,10 @@ class CertificationEntry(BaseModel):
 class ResumeSchema(BaseModel):
     """Full resume payload schema matching resume_data.json."""
 
-    basic_info: BasicInfo
+    basic_info: BasicInfo = Field(default_factory=_default_basic_info)
     professional_experience: List[ProfessionalExperienceEntry]
-    education: List[EducationEntry]
-    licenses_and_certifications: List[CertificationEntry]
+    education: List[EducationEntry] = Field(default_factory=_default_education)
+    licenses_and_certifications: List[CertificationEntry] = Field(default_factory=_default_licenses)
 
 
 class SerializedJobReqCategory(BaseModel):

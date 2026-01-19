@@ -1,400 +1,177 @@
-"""
-Resume Service - High-level business logic for resume operations
-"""
+# """
+# Resume Service - High-level business logic for resume operations
+# """
 
-from __future__ import annotations
+# from __future__ import annotations
 
-import json
-import logging
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Any, List, AsyncIterator, cast
-from collections.abc import AsyncGenerator
+# import json
+# import logging
+# from dataclasses import dataclass
+# from datetime import datetime, timedelta, timezone
+# from typing import Any, List, AsyncIterator, cast
+# from collections.abc import AsyncGenerator
 
-from src.config import settings
-from src.libs.resume_cache import ResumeCacheEntry, get_resume_cache
-from src.libs.vector_database import EmbeddingModel
-from src.services.llm_service import get_llm_service
-from src.services.profile_service import get_profile_service, ProfileService
-from src.mcp.prompts import (
-    build_analysis_prompt,
-    build_resume_from_source_prompt,
-    build_job_requirements_prompt,
-)
-from src.schemas import (
-    ResumeMatch,
-    JobAnalysis,
-    SerializedJobReqCategory,
-)
+# from src.config import settings
+# from src.libs.resume_cache import ResumeCacheEntry, get_resume_cache
+# from src.libs.vector_database import EmbeddingModel
+# from libs.llm import get_llm
+# from src.mcp.prompts import (
+#     build_analysis_prompt,
+#     build_resume_from_source_prompt,
+#     build_job_requirements_prompt,
+# )
+# from src.schemas import (
+#     ResumeMatch,
+#     ResumeSchema,
+#     SerializedJobReqCategory,
+# )
 
-logger = logging.getLogger(__name__)
+# logger = logging.getLogger(__name__)
 
+# # TODO(jc): why needs this function?
+# def _default_analysis_result() -> dict:
+#     return {}
 
-def _default_analysis_result() -> dict:
-    return {
-        "required_skills": ["Python", "FastAPI", "React", "AWS"],
-        "experience_level": "Senior",
-        "key_responsibilities": [
-            "Design and implement scalable systems",
-            "Lead technical projects",
-            "Mentor junior developers",
-        ],
-        "estimated_match_threshold": 0.7,
-    }
+# # TODO(jc): why needs this function?
+# def _parse_analysis_response(response: str | None) -> dict:
+#     if not response:
+#         return _default_analysis_result()
+#     raw = response.strip()
+#     if "{" in raw and "}" in raw:
+#         raw = raw[raw.find("{") : raw.rfind("}") + 1]
+#     try:
+#         data = json.loads(raw)
+#     except json.JSONDecodeError:
+#         return _default_analysis_result()
+#     if not isinstance(data, dict):
+#         return _default_analysis_result()
+#     return data
 
+# # TODO(jc): why needs this function?
+# def _parse_job_requirements_response(response: str | None) -> dict:
+#     if not response:
+#         return {}
+#     raw = response.strip()
+#     if "{" in raw and "}" in raw:
+#         raw = raw[raw.find("{") : raw.rfind("}") + 1]
+#     try:
+#         data = json.loads(raw)
+#     except json.JSONDecodeError:
+#         return {}
+#     if not isinstance(data, dict):
+#         return {}
+#     return data
 
-def _parse_analysis_response(response: str | None) -> dict:
-    if not response:
-        return _default_analysis_result()
-    raw = response.strip()
-    if "{" in raw and "}" in raw:
-        raw = raw[raw.find("{") : raw.rfind("}") + 1]
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        return _default_analysis_result()
-    if not isinstance(data, dict):
-        return _default_analysis_result()
-    return data
+# @dataclass
+# class MatchSummary:
+#     summary: str
+#     match_rate: float
+#     match_rate_percent: int
+#     matched_skills: list[str]
+#     missing_skills: list[str]
 
-
-def _parse_job_requirements_response(response: str | None) -> dict:
-    if not response:
-        return {}
-    raw = response.strip()
-    if "{" in raw and "}" in raw:
-        raw = raw[raw.find("{") : raw.rfind("}") + 1]
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        return {}
-    if not isinstance(data, dict):
-        return {}
-    return data
-
-
-@dataclass
-class MatchSummary:
-    summary: str
-    match_rate: float
-    match_rate_percent: int
-    matched_skills: list[str]
-    missing_skills: list[str]
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "summary": self.summary,
-            "match_rate": self.match_rate,
-            "match_rate_percent": self.match_rate_percent,
-            "matched_skills": self.matched_skills,
-            "missing_skills": self.missing_skills,
-        }
+#     def to_dict(self) -> dict[str, Any]:
+#         return {
+#             "summary": self.summary,
+#             "match_rate": self.match_rate,
+#             "match_rate_percent": self.match_rate_percent,
+#             "matched_skills": self.matched_skills,
+#             "missing_skills": self.missing_skills,
+#         }
 
 
-class ResumeService:
-    """Service for resume-related operations"""
+# class ResumeService:
+#     """Service for resume-related operations"""
 
-    def __init__(self, user_id:str) -> None:
-        self.user_id = user_id
-        self.profile_service: ProfileService | None
-        try:
-            self.profile_service = get_profile_service()
-        except Exception as exc:
-            logger.warning("Profile service unavailable: %s", exc)
-            self.profile_service = None
+#     def __init__(self, user_id:str) -> None:
+#         self.user_id = user_id
+#         self.profile_service: ProfileService | None
+#         try:
+#             self.profile_service = get_profile_service()
+#         except Exception as exc:
+#             logger.warning("Profile service unavailable: %s", exc)
+#             self.profile_service = None
 
-        self.resume_cache = get_resume_cache(
-            max_entries=settings.resume_cache_max_entries,
-            ttl_seconds=settings.resume_cache_ttl_seconds,
-            cache_path=settings.resume_cache_path,
-        )
-
-    def _map_search_results_to_matches(
-        self,
-        results: list[dict[str, Any]],
-    ) -> list[ResumeMatch]:
-        matches: list[ResumeMatch] = []
-        for result in results:
-            metadata = result.get("metadata") or {}
-            profile_data = metadata.get("profile_data") or {}
-            skills = profile_data.get("skills") or []
-            if isinstance(skills, str):
-                skills = [skills]
-            experience_years = profile_data.get("experience_years") or 0
-            try:
-                experience_years = int(experience_years)
-            except (TypeError, ValueError):
-                experience_years = 0
-            resume_id = (
-                result.get("profile_data_id")
-                or result.get("document_id")
-                or result.get("article_id")
-                or "unknown"
-            )
-            matches.append(
-                ResumeMatch(
-                    resume_id=str(resume_id),
-                    content=result.get("chunk_text") or result.get("content") or "",
-                    skills=skills if isinstance(skills, list) else [],
-                    experience_years=experience_years,
-                    similarity_score=float(result.get("similarity") or 0.0),
-                )
-            )
-        return matches
-
-    async def _search_profile_matches(
-        self,
-        job_description: str,
-        top_k: int,
-        embedding_model: EmbeddingModel,
-    ) -> tuple[list[dict[str, Any]], list[ResumeMatch]]:
-        if self.profile_service is None:
-            return [], []
-        raw_results = await self.profile_service.search_job_matches(
-            job_description=job_description,
-            user_id=self.user_id,
-            top_k=top_k,
-            threshold=settings.min_similarity_threshold,
-            embedding_model=embedding_model,
-        )
-        matches = self._map_search_results_to_matches(raw_results)
-        return raw_results, matches
-
-    async def _serialize_job_reqs(
-        self,
-        job_description: str,
-        provider: str,
-    ) -> JobAnalysis:
-        """Analyze job description to extract key information"""
-
-        logger.info("Analyzing job description")
-
-        llm_service = get_llm_service(provider)
-        prompt = build_analysis_prompt(job_description)
-        response = await llm_service.extract_jobs_insights(prompt)
-        analysis_data = _parse_analysis_response(response)
-
-        return JobAnalysis(
-            required_skills=analysis_data.get("required_skills", []),
-            experience_level=analysis_data.get("experience_level", "Mid"),
-            key_responsibilities=analysis_data.get("key_responsibilities", []),
-            estimated_match_threshold=analysis_data.get(
-                "estimated_match_threshold",
-                0.7,
-            ),
-        )
-
-    async def _summarize_matches(
-        self,
-        job_description: str,
-        matches: list[ResumeMatch],
-        provider: str,
-    ) -> MatchSummary:
-        analysis = await self._serialize_job_reqs(job_description, provider)
-        required_skills = {skill.lower() for skill in analysis.required_skills}
-        matched_skill_pool = {skill.lower() for m in matches for skill in m.skills}
-        matched_skills = sorted({skill for skill in required_skills & matched_skill_pool})
-        missing_skills = sorted({skill for skill in required_skills - matched_skill_pool})
-
-        if matches:
-            similarity_avg = sum(m.similarity_score for m in matches) / len(matches)
-        else:
-            similarity_avg = 0.0
-
-        if required_skills:
-            skill_coverage = len(matched_skills) / len(required_skills)
-            match_rate = min(1.0, 0.7 * similarity_avg + 0.3 * skill_coverage)
-        else:
-            match_rate = similarity_avg
-
-        match_rate_percent = int(round(match_rate * 100))
-
-        if not matches:
-            summary = "No strong matches found for this job description."
-        elif required_skills:
-            summary = (
-                f"Match rate {match_rate_percent}% with {len(matched_skills)} of "
-                f"{len(required_skills)} required skills aligned."
-            )
-        else:
-            summary = f"Match rate {match_rate_percent}% based on semantic similarity."
-
-        return MatchSummary(
-            summary=summary,
-            match_rate=match_rate,
-            match_rate_percent=match_rate_percent,
-            matched_skills=matched_skills,
-            missing_skills=missing_skills,
-        )
-
-    async def categorize_job_requirements(
-        self,
-        job_description: str,
-        provider: str,
-    ) -> SerializedJobReqCategory:
-        """Categorize job requirements into structured buckets."""
-        llm_service = get_llm_service(provider)
-        prompt = build_job_requirements_prompt(job_description)
-        response = await llm_service.extract_jobs_insights(prompt)
-        data = _parse_job_requirements_response(response)
-        try:
-            return SerializedJobReqCategory.model_validate(data)
-        except Exception:
-            return SerializedJobReqCategory()
-
-    async def generate_updated_resume(
-        self,
-        job_description: str,
-        provider: str,
-        embedding_model: EmbeddingModel,
-        top_k: int = 5,
-        use_cache: bool = True,
-    ) -> dict[str, Any]:
-        if self.profile_service is None:
-            raise ValueError("Profile service unavailable")
-
-        raw_matches, matches = await self._search_profile_matches(
-            job_description,
-            top_k,
-            embedding_model,
-        )
-
-        match_summary = await self._summarize_matches(job_description, matches, provider)
-
-        profile_ids = [
-            str(match.get("profile_data_id"))
-            for match in raw_matches
-            if match.get("profile_data_id")
-        ]
-        resume_source = self.profile_service.get_resume_source(
-            user_id=self.user_id,
-            profile_ids=profile_ids or None,
-        )
-        profile_fingerprint = self.profile_service.fingerprint_resume_source(resume_source)
-        cache_key = self.resume_cache.build_key(job_description, profile_fingerprint)
-
-        if use_cache:
-            cached_entry = await self.resume_cache.get(cache_key)
-            if cached_entry:
-                cached_summary = cached_entry.metadata.get("match_summary")
-                return {
-                    "resume": cached_entry.resume_text,
-                    "match_summary": cached_summary
-                    or {
-                        "summary": cached_entry.summary,
-                        "match_rate": cached_entry.match_rate,
-                        "match_rate_percent": int(round(cached_entry.match_rate * 100)),
-                    },
-                    "matches": [m.model_dump() for m in matches],
-                    "cache_hit": True,
-                }
-
-        resume_chunks: list[str] = []
-        prompt = build_resume_from_source_prompt(
-            job_description,
-            resume_source,
-            match_summary.to_dict(),
-        )
-        resume_text = await get_llm_service(provider).extract_jobs_insights(prompt)
-
-        await self.resume_cache.set(
-            ResumeCacheEntry(
-                key=cache_key,
-                resume_text=resume_text,
-                summary=match_summary.summary,
-                match_rate=match_summary.match_rate,
-                created_at=datetime.now(timezone.utc),
-                expires_at=datetime.now(timezone.utc)
-                + timedelta(seconds=settings.resume_cache_ttl_seconds),
-                metadata={
-                    "profile_fingerprint": profile_fingerprint,
-                    "user_id": self.user_id,
-                    "match_summary": match_summary.to_dict(),
-                },
-            )
-        )
-
-        return {
-            "resume": resume_text,
-            "match_summary": match_summary.to_dict(),
-            "matches": [m.model_dump() for m in matches],
-            "cache_hit": False,
-        }
-
-    async def generate_latest_resume(
-        self,
-        provider: str,
-        use_cache: bool = True,
-    ) -> dict[str, Any]:
-        if self.profile_service is None:
-            raise ValueError("Profile service unavailable")
-
-        resume_source = self.profile_service.get_resume_source(user_id=self.user_id)
-        profile_fingerprint = self.profile_service.fingerprint_resume_source(resume_source)
-        cache_key = self.resume_cache.build_key("latest_resume", profile_fingerprint)
-
-        if use_cache:
-            cached_entry = await self.resume_cache.get(cache_key)
-            if cached_entry:
-                return {
-                    "resume": cached_entry.resume_text,
-                    "match_summary": {
-                        "summary": cached_entry.summary,
-                        "match_rate": cached_entry.match_rate,
-                        "match_rate_percent": int(round(cached_entry.match_rate * 100)),
-                        "matched_skills": [],
-                        "missing_skills": [],
-                    },
-                    "cache_hit": True,
-                }
-
-        match_summary = MatchSummary(
-            summary="Generated latest resume from current profile data.",
-            match_rate=1.0,
-            match_rate_percent=100,
-            matched_skills=[],
-            missing_skills=[],
-        )
-
-        resume_chunks: list[str] = []
-        prompt = build_resume_from_source_prompt(
-            "",
-            resume_source,
-            match_summary.to_dict(),
-        )
-        resume_text = await get_llm_service(provider).extract_jobs_insights(prompt)
-
-        await self.resume_cache.set(
-            ResumeCacheEntry(
-                key=cache_key,
-                resume_text=resume_text,
-                summary=match_summary.summary,
-                match_rate=match_summary.match_rate,
-                created_at=datetime.now(timezone.utc),
-                expires_at=datetime.now(timezone.utc)
-                + timedelta(seconds=settings.resume_cache_ttl_seconds),
-                metadata={
-                    "profile_fingerprint": profile_fingerprint,
-                    "user_id": self.user_id,
-                },
-            )
-        )
-
-        return {
-            "resume": resume_text,
-            "match_summary": match_summary.to_dict(),
-            "cache_hit": False,
-        }
+#         self.resume_cache = get_resume_cache(
+#             max_entries=settings.resume_cache_max_entries,
+#             ttl_seconds=settings.resume_cache_ttl_seconds,
+#             cache_path=settings.resume_cache_path,
+#         )
 
 
-_resume_service: ResumeService | None = None
+#     async def _search_profile_matches(
+#         self,
+#         job_description: str,
+#         top_k: int,
+#         embedding_model: EmbeddingModel,
+#     ) -> tuple[list[dict[str, Any]], list[ResumeMatch]]:
+#         if self.profile_service is None:
+#             return [], []
+#         raw_results = await self.profile_service.search_job_matches(
+#             job_description=job_description,
+#             user_id=self.user_id,
+#             top_k=top_k,
+#             threshold=settings.min_similarity_threshold,
+#             embedding_model=embedding_model,
+#         )
+#         matches = self._map_search_results_to_matches(raw_results)
+#         return raw_results, matches
+
+#     async def categorize_job_requirements(
+#         self,
+#         job_description: str,
+#         provider: str,
+#     ) -> SerializedJobReqCategory:
+#         """Categorize job requirements into structured buckets."""
+#         llm_service = get_llm_service(provider)
+#         prompt = build_job_requirements_prompt(job_description)
+#         llm_response = await llm_service.extract_jobs_insights(prompt)
+#         data = _parse_job_requirements_response(llm_response)
+#         try:
+#             return SerializedJobReqCategory.model_validate(data)
+#         except Exception:
+#             return SerializedJobReqCategory()
+
+#     # NOTE(jc): new function.
+#     async def get_matched_profiles_for_resume_generation(
+#         self,
+#         top_k: int,
+#         embedding_model: EmbeddingModel,
+#         job_description_category: SerializedJobReqCategory,
+#     ) -> Any:
+#         """Generate matched profiles for resume
+#         1. for loop each category in job_description_category as the search query to get profile matches by using ProfileService function.
+#         2. find out the top_k matches for each category and aggregate the results.
+#         3. call llm with prompt to aggreate the matched profiles into work experience entries.
+#         4. update the result to ResumeSchema.professional_experiences.
+#         5. call pdf_geneartor, to generate the resume pdf.
+#         """
+#         similarity_matches = []
+#         # Iterate through each category in the job description to get matches profile
+#         for category in job_description_category.model_dump().values():
+#             if isinstance(category, str):
+#                 category = [category]
+#             if isinstance(category, list):
+#                 for item in category:
+#                     if isinstance(item, str) and item.strip():
+#                         _, matches = await self._search_profile_matches(
+#                             job_description=item,
+#                             top_k=top_k,
+#                             embedding_model=embedding_model,
+#                         )
+#                         similarity_matches.extend(matches)
+            
+#         pass
+    
+
+# _resume_service: ResumeService | None = None
 
 
-def get_resume_service(user_id: str | None = None) -> ResumeService:
-    """Get resume service instance (singleton)"""
-    global _resume_service
-    user_id = user_id or settings.author_user_id or "default_user"
-    if _resume_service is None:
-        _resume_service = ResumeService(user_id=user_id)
+# def get_resume_service(user_id: str | None = None) -> ResumeService:
+#     """Get resume service instance (singleton)"""
+#     global _resume_service
+#     user_id = user_id or settings.user_id or "default_user"
+#     if _resume_service is None:
+#         _resume_service = ResumeService(user_id=user_id)
 
-    return _resume_service
+#     return _resume_service
