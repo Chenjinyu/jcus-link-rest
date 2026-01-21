@@ -77,6 +77,29 @@ curl -s http://localhost:8000/mcp \
       }
     }'
 ```
+
+1.3 get matched job experience by providing pdf file
+```sh
+curl -s http://localhost:8000/mcp \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
+    -d '{
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "tools/call",
+      "params": {
+        "name": "generate_matched_resume",
+        "arguments": {
+          "input_type": "pdf",
+          "filename": "job_description.pdf",
+          "input_data": "<BASE64_PDF_BYTES>", # web app should send like this
+          "input_data": "JVBERi0xLjQKJcTl8uXr...<base64-encoded-pdf-bytes>...",
+          "top_k": 10,
+          "threshold": 0.5
+        }
+      }
+    }'
+```
 2. generate a latest/updated resume
 ```sh
 curl -s http://localhost:8000/mcp \
