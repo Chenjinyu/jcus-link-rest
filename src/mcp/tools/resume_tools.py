@@ -103,7 +103,6 @@ def register_tools(mcp: FastMCP) -> None:
             top_k = top_k or settings.default_top_k
             threshold = threshold or settings.min_similarity_threshold
             if ctx:
-                # sends info message tied to the current MCP request and send to MCP client.
                 await ctx.info("Parsing job description for skill matching")
             
             # 1. parse the job description from input data with type.
@@ -182,3 +181,56 @@ def register_tools(mcp: FastMCP) -> None:
             raise FileUploadException(util.format_exception_message(exc)) from exc
 
 
+    @mcp.tool()
+    async def search_similar_content(
+        input_text: str,
+        user_id: str | None = None,
+        top_k: int = 10,
+        threshold: float | None = None,
+        provider: str | None = None,
+        ctx: Context | None = None,
+    ):
+        """
+        based on the input_text to search the similarity from supabase with all data tables:
+        documents, profile_data, personal_attribute.
+        1. get the input_text, chunk it if the content length more than 500
+        2. embeds the input_text.
+        3. call vector_db_oper.py's profile_similarity_search_rpc and return
+        """
+        user_id = user_id or _user_id
+        provider = provider or _provider
+        top_k = top_k or settings.default_top_k
+        threshold = threshold or settings.min_similarity_threshold
+        if ctx:
+            await ctx.info("querying the similarity with the provided content.")
+        
+        # 1. get the input_text, chunk it if the content length more than 500
+        if len(input_text) > 500:
+            chunk_input_text = util.chunk_text(input_text)
+        else:
+            chunk_input_text = [input_text]
+            
+        # get model id for searching corresponding embeded text
+        model_id = await get_model_id(
+            vector_db_client=_vector_db_client,
+            provider=provider,
+            model_identifier=_embedding_model_name
+        )
+        
+        match_items = []
+        for chunk in chunk_input_text:
+            query_embedding = await _llm.generate_embeddings(
+                text=chunk
+            )
+            rpc_response = await profile_similarity_search_rpc(
+                vector_db_client=_vector_db_client,
+                query_embedding=query_embedding,
+                model_id=model_id,
+                embedding_dimensions=_dimissions,
+                user_id=user_id,
+                top_k=top_k,
+                threshold=threshold
+            )
+            match_items.extend(rpc_response.data) # type: ignore
+        print(json.dumps(match_items, indent=2))
+        return match_items

@@ -43,37 +43,6 @@ def _normalize_execute_result(result: Any) -> List[Dict[str, Any]]:
         return result["data"]
     return []
 
-async def search_search_documents_rpc(
-    vector_db_client,
-    user_id: str,
-    model_id: UUID,
-    threshold: float,
-    limit: int,
-    query_embedding: list[float],
-    content_types: List[str] | None = None,
-    tags: List[str] | None = None
-) -> Union[list[dict[str, Any]], Dict[str, Any]]:
-    """Call the RPC function for vector search."""
-    response = (
-        vector_db_client.rpc(
-            "search_profiles",
-            {
-                "query_embedding": query_embedding,
-                "model_id": model_id,
-                "query_dims": 768,
-                "match_count": limit,
-                "match_threshold": threshold,
-                "filter_user_id": user_id,
-                "filter_content_types": content_types,
-                "filter_tags": tags,
-            },
-        )
-        .execute()
-    )
-    
-    return response.data or []
-
-
 async def profile_similarity_search_rpc(
     vector_db_client,
     query_embedding: list[float],
@@ -86,6 +55,32 @@ async def profile_similarity_search_rpc(
     response = (
         vector_db_client.rpc(
             "profile_similarity_search",
+            {
+                "query_embedding": query_embedding,
+                "model_id": model_id,
+                "embedding_dimensions": embedding_dimensions,
+                "user_id_filter": user_id,
+                "match_count": top_k,
+                "match_threshold": threshold,
+            },
+        )
+        .execute()
+    )
+    return response
+    # return response.data or []
+    
+async def search_similar_content_rpc(
+    vector_db_client,
+    query_embedding: list[float],
+    model_id: UUID,
+    embedding_dimensions: int,
+    user_id: str,
+    top_k: int = 10,
+    threshold: float = settings.min_similarity_threshold,
+):
+    response = (
+        vector_db_client.rpc(
+            "search_similar_content",
             {
                 "query_embedding": query_embedding,
                 "model_id": model_id,
