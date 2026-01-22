@@ -66,6 +66,13 @@ def register_tools(mcp: FastMCP) -> None:
     _provider = _get_provider()
     _embedding_model_name, _dimissions = _get_embeding_model_and_dimissions()
     _llm = get_llm()    
+    print("=" * 70)
+    print("MCP Tools have been registered into FastAPI server")
+    print(f"✅               _user_id: {_user_id}")
+    print(f"✅              _provider: {_provider}")
+    print(f"✅  _embedding_model_name: {_embedding_model_name}")
+    print(f"✅            _dimissions: {_dimissions}")
+    print("=" * 70)
     
     @mcp.tool()
     async def generate_matched_resume(

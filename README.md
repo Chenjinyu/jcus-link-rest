@@ -39,7 +39,7 @@ and text generation.
 ### Tools
 1.1. get matched job experience by provide text
 ```sh
-curl -s http://localhost:8000/mcp \
+curl -s -X POST http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
     -H "Accept: application/json, text/event-stream" \
     -d '{
@@ -80,7 +80,7 @@ curl -s http://localhost:8000/mcp \
 
 1.3 get matched job experience by providing pdf file
 ```sh
-curl -s http://localhost:8000/mcp \
+curl -s -X POST http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
     -H "Accept: application/json, text/event-stream" \
     -d '{
@@ -100,9 +100,29 @@ curl -s http://localhost:8000/mcp \
       }
     }'
 ```
+
+1.4. get similar content by searching profile table
+```sh
+curl -s -X POST http://localhost:8000/mcp \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
+    -d '{
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "tools/call",
+      "params": {
+        "name": "search_similar_content",
+        "arguments": {
+          "input_text": "API",
+          "top_k": 10,
+          "threshold": 0.7
+        }
+      }
+    }'
+```
 2. generate a latest/updated resume
 ```sh
-curl -s http://localhost:8000/mcp \
+curl -s -X POST http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
     -H "Accept: application/json, text/event-stream" \
     -d '{
@@ -110,7 +130,7 @@ curl -s http://localhost:8000/mcp \
       "id": 2,
       "method": "tools/call",
       "params": {
-        "name": "generate_updated_resume",
+        "name": "search_similar_content",
         "arguments": {
           "job_description": "We need a backend engineer with FastAPI and AWS.",
           "top_k": 5,
@@ -122,7 +142,7 @@ curl -s http://localhost:8000/mcp \
 
 3. download the latest resume
 ```sh
-curl -s http://localhost:8000/mcp \
+curl -s -X POST http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
     -H "Accept: application/json, text/event-stream" \
     -d '{
@@ -140,7 +160,7 @@ curl -s http://localhost:8000/mcp \
 
 4. Check the cache status for storing resume with LRU
 ```sh
-curl -s http://localhost:8000/mcp \
+curl -s -X POST http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
     -H "Accept: application/json, text/event-stream" \
     -d '{
@@ -157,7 +177,7 @@ curl -s http://localhost:8000/mcp \
 ### Resources
 1. get all resources
 ```sh
-  curl -s http://localhost:8000/mcp \
+  curl -s -X POST http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
     -H "Accept: application/json, text/event-stream" \
     -d '{
@@ -170,7 +190,7 @@ curl -s http://localhost:8000/mcp \
 
 2. get server info
 ```sh
-  curl -s http://localhost:8000/mcp \
+  curl -s -X POST http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
     -H "Accept: application/json, text/event-stream" \
     -d '{
@@ -185,7 +205,7 @@ curl -s http://localhost:8000/mcp \
 
 3. get prompts info
 ```sh
-  curl -s http://localhost:8000/mcp \
+  curl -s -X POST http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
     -H "Accept: application/json, text/event-stream" \
     -d '{
@@ -200,7 +220,7 @@ curl -s http://localhost:8000/mcp \
 
 4. get resume generation prompt from resources
 ```sh
-  curl -s http://localhost:8000/mcp \
+  curl -s -X POST http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
     -H "Accept: application/json, text/event-stream" \
     -d '{
@@ -215,7 +235,7 @@ curl -s http://localhost:8000/mcp \
 ### Prompts
 1. List all prompts
 ```sh
-  curl -s http://localhost:8000/mcp \
+  curl -s -X POST http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
     -H "Accept: application/json, text/event-stream" \
     -d '{
@@ -228,7 +248,7 @@ curl -s http://localhost:8000/mcp \
 
 3. get resume gerneation prompt
 ```sh
-  curl -s http://localhost:8000/mcp \
+  curl -s -X POST http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
     -H "Accept: application/json, text/event-stream" \
     -d '{
@@ -247,7 +267,7 @@ curl -s http://localhost:8000/mcp \
 
 4. get job analysis prompt
 ```sh
-  curl -s http://localhost:8000/mcp \
+  curl -s -X POST http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
     -H "Accept: application/json, text/event-stream" \
     -d '{
@@ -265,7 +285,7 @@ curl -s http://localhost:8000/mcp \
 
 5. get resume from source prompt
 ```sh
-  curl -s http://localhost:8000/mcp \
+  curl -s -X POST http://localhost:8000/mcp \
     -H "Content-Type: application/json" \
     -H "Accept: application/json, text/event-stream" \
     -d '{
