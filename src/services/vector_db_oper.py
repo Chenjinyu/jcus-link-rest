@@ -2,7 +2,7 @@ from pyexpat import model
 from typing import Any, Dict, List, Union
 from uuid import UUID
 from supabase import Client
-from config.settings import settings
+from src.config.settings import settings
 
 async def get_model_id(
     vector_db_client,

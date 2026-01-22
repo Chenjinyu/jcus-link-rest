@@ -62,8 +62,19 @@ class AppSettings(BaseSettings):
     chromadb_collection: str = "resumes"
 
     # API Keys
-    openai_api_key: str | None = None
-    google_api_key: str | None = None
+    openai_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("OPENAI_API_KEY"),
+    )
+    google_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("GOOGLE_API_KEY", "GEMINI_API_KEY"),
+    )
+    anthropic_api_key: str | None = None
+    ollama_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("OLLAMA_API_KEY"),
+    )
     # Embedding Model
     default_embedding_model_name: str | None = None
     ollama_embedding_model_name: str = "nomic-embed-text"

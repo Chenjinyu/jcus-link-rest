@@ -16,6 +16,12 @@ uv run uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 uv run python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
+Run with Docker Image
+```sh
+docker build -f Dockerfile -t jcus-rest:latest .
+
+docker run --rm -p 8000:8000 --env-file .env.prod jcus-rest:latest
+```
 
 ## MCP tool examples
 

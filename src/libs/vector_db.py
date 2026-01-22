@@ -1,7 +1,5 @@
-from typing import Any, Dict, List, Union, Literal
+from typing import Any, Dict, List
 import functools
-from libs.vector_database import VectorDatabase
-
 import asyncpg
 from asyncpg.pool import PoolConnectionProxy
 from supabase import Client, create_client
