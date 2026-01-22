@@ -22,6 +22,8 @@ wheels/
 
 # Virtual environments (not needed in Docker)
 .env
+.env.local
+.env.prod
 .venv/
 venv/
 ENV/
