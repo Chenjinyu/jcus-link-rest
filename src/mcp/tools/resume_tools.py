@@ -102,7 +102,8 @@ def register_tools(mcp: FastMCP) -> None:
         2. chunk the job description text and generate embedding
         3. call vector DB to search similar profile content by embedding
         4. aggregate the matched profile content and call LLM to generate updated resume
-        5. return the updated resume content as base64 encoded pdf file
+        5. call pdf_generator to generate the pdf file
+        6. return the resume file as base64 encoded pdf file
         """
         try:
             user_id = user_id or _user_id
@@ -134,7 +135,7 @@ def register_tools(mcp: FastMCP) -> None:
                 model_identifier=_embedding_model_name
             )
             
-            match_items = []
+            professional_experiences = []
             for chunk in chunk_job_descs:
                 query_embedding = await _llm.generate_embeddings(
                     text=chunk
@@ -149,9 +150,18 @@ def register_tools(mcp: FastMCP) -> None:
                     top_k=top_k,
                     threshold=threshold
                 )
-                match_items.extend(rpc_response.data) # type: ignore
-            print(json.dumps(match_items, indent=2))
-            return match_items
+                professional_experiences.extend(rpc_response.data) # type: ignore
+            print("=" * 30 + "generate_matched_resume - professional_experiences" + "=" * 30)
+            print(json.dumps(professional_experiences, indent=2))
+            # normoliza rpc response to ProfessionalExperienceEntry
+            for exp in professional_experiences:
+                exp = getattr(exp, 'data', None)
+                print("=" * 30 + " exp " + "=" * 30)
+                ...
+            if ctx:
+                await ctx.info('Starting to genreate latest resume')
+            
+            return professional_experiences
             #     similarity_total = 0.0
             #     for match in matches:
             #         similarity = float(match.get("similarity") or 0.0)
