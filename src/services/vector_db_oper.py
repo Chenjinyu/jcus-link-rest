@@ -52,20 +52,32 @@ async def profile_similarity_search_rpc(
     top_k: int = 10,
     threshold: float = settings.min_similarity_threshold,
 ) -> list[dict[str, Any]]:
+    similarity_query_payload = {
+        "query_embedding": query_embedding,
+        "model_id": model_id,
+        "embedding_dimensions": embedding_dimensions,
+        "user_id_filter": user_id,
+        "match_count": top_k,
+        "match_threshold": threshold,
+    }
+    print("="*30 + "similarity_query_payload"+ "="*30)
+    print(similarity_query_payload)
     response = (
         vector_db_client.rpc(
             "profile_similarity_search",
-            {
-                "query_embedding": query_embedding,
-                "model_id": model_id,
-                "embedding_dimensions": embedding_dimensions,
-                "user_id_filter": user_id,
-                "match_count": top_k,
-                "match_threshold": threshold,
-            },
+            similarity_query_payload,
         )
         .execute()
     )
+    # {
+    #   "profile_id": uuid,
+    #   "data": JSONB,
+    #   "tag": list[str],
+    #   "similarity": float
+    # }
+    print("=" * 30 + "profile_similarity_search" + "=" * 30)
+    print(type(response))
+    print(response)
     return response
     # return response.data or []
     

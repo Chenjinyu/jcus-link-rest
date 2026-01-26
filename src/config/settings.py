@@ -130,8 +130,10 @@ class DevSettings(AppSettings):
     log_level: str = "DEBUG"
     rate_limit_enabled: bool = False
     # LLM Service
-    default_llm_provider: str = "ollama"  # openai, google, ollama. ollama uses local model
-    default_embedding_model_name: str = "nomic-embed-text"
+    # default_llm_provider: str = "ollama"  # openai, google, ollama. ollama uses local model
+    # default_embedding_model_name: str = "nomic-embed-text"
+    default_llm_provider: str = "google"  # openai, google, ollama. ollama uses local model
+    default_embedding_model_name: str = "text-embedding-004"
 
 class ProdSettings(AppSettings):
     """Production defaults."""
